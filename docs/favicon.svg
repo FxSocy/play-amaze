@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Amaze">
+  <rect width="32" height="32" rx="6" fill="#11131a" />
+  <g fill="none" stroke="#7aa2f7" stroke-width="3" stroke-linecap="square">
+    <path d="M6 6v20M12 26V12h8M26 6v20M20 6h-8" />
+  </g>
+  <circle cx="9" cy="9" r="2.4" fill="#9ece6a" />
+  <circle cx="23" cy="23" r="2.4" fill="#f7768e" />
+</svg>

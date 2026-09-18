@@ -1,0 +1,42 @@
+# Amaze
+
+Play it: **https://fxsocy.github.io/play-amaze/**
+
+A pseudorandom maze game. Solve a new maze whenever you like, or take on the **daily maze** — the
+same maze for everyone, seeded from the UTC date — and the **Daily Doozie**, a much larger foggy
+maze that unlocks once you've solved the day's standard one. Only your first attempt each day is
+scored (time × moves, lower is better), and the score copies to your clipboard as shareable text.
+
+Arrow keys, WASD or vim keys (HJKL) move. Drag from the dot to trace a route; clicking walks back
+over cells you've already visited, so the mouse can backtrack but can't solve the maze for you.
+`F` fits the maze to the window, `T` toggles breadcrumbs, `G` gives up, `N` starts a new maze, `B`
+shows best times, `P` opens Appearance and `Esc` opens Settings.
+
+Progress (best times, daily results, theme) is stored in your browser's local storage, so it stays
+on the device you play on and a private window starts fresh.
+
+## This repository
+
+This is the **web release** of Amaze, published from a private repository where the game is
+developed as an Electron desktop app. The two share `src/core` (maze generation, solving, scoring,
+settings) and `src/renderer` (the React UI and canvas); the difference is only how they store
+progress — files on disk in the desktop app, local storage here.
+
+- `src/` — the game's source, as released.
+- `docs/` — the built static site that GitHub Pages serves.
+- `release.json` — the version and source commit each release was built from.
+
+Releases are pushed here as complete snapshots, so history on this repo is one commit per release
+rather than per change.
+
+## Building it yourself
+
+```bash
+yarn install
+yarn dev        # dev server
+yarn test       # unit tests for the core game logic
+yarn typecheck
+yarn build      # typecheck + build the site into docs/
+```
+
+Requires Node 22.12 or newer.
