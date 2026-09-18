@@ -9,7 +9,7 @@ import {
   type DailyResult
 } from '../../core/dailyScore'
 import { bestRecord, createRecord, type TimeRecord } from '../../core/records'
-import { randomSeed } from '../../core/rng'
+import { randomId, randomSeed } from '../../core/rng'
 import { GameSession } from '../../core/session'
 import { DEFAULT_SETTINGS, modifierKey, type GameSettings } from '../../core/settings'
 import { api } from './api'
@@ -20,8 +20,9 @@ import { ConfirmGiveUpDialog, GaveUpDialog } from './components/GiveUpDialogs'
 import { Hud } from './components/Hud'
 import { RecordsDialog } from './components/RecordsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
+import { TouchHint } from './components/TouchHint'
 import { GameCanvas } from './game/GameCanvas'
-import { applyPalette, usePrefersDark } from './theme'
+import { applyPalette, useIsTouch, usePrefersDark } from './theme'
 
 type DialogState =
   | { kind: 'settings' }
@@ -99,6 +100,7 @@ function Game({ boot }: { boot: Boot }) {
   const [scored, setScored] = useState<ScoredRun | null>(null)
   const [appearance, setAppearance] = useState(boot.appearance)
   const prefersDark = usePrefersDark()
+  const touch = useIsTouch()
   const palette = useMemo(() => resolvePalette(appearance, prefersDark), [appearance, prefersDark])
 
   useEffect(() => applyPalette(palette), [palette])
@@ -152,7 +154,7 @@ function Game({ boot }: { boot: Boot }) {
     if (!s.begin(performance.now())) return
     // The first run started each day is the scored one; everything after is practice.
     if (s.settings.seedMode !== 'daily' || dailyResults[s.seed]) return
-    const claim = startDailyResult(s.seed, globalThis.crypto.randomUUID())
+    const claim = startDailyResult(s.seed, randomId())
     setScored({ session: s, attemptId: claim.attemptId })
     storeDailyResult(claim)
     api
@@ -272,10 +274,13 @@ function Game({ boot }: { boot: Boot }) {
         onPlayDaily={playDaily}
         onGiveUp={requestGiveUp}
         onNewMaze={() => guardLeave(() => newMaze())}
+        onRetry={() => guardLeave(retry)}
         onOpenSettings={() => setDialog({ kind: 'settings' })}
         onOpenAppearance={() => setDialog({ kind: 'appearance' })}
         onOpenRecords={() => setDialog({ kind: 'records' })}
         onFit={() => setFitRequest((n) => n + 1)}
+        touchDpad={appearance.touchDpad}
+        onToggleDpad={() => setAppearance((a) => ({ ...a, touchDpad: !a.touchDpad }))}
       />
       <main className="stage">
         <GameCanvas
@@ -286,6 +291,12 @@ function Game({ boot }: { boot: Boot }) {
           appearance={appearance}
           palette={palette}
         />
+        {touch && !appearance.touchHintSeen && !session.awaitingStart && (
+          <TouchHint
+            onDismiss={() => setAppearance((a) => ({ ...a, touchHintSeen: true }))}
+            onUseDpad={() => setAppearance((a) => ({ ...a, touchHintSeen: true, touchDpad: true }))}
+          />
+        )}
         {session.awaitingStart && (
           <StartOverlay
             session={session}
@@ -302,8 +313,17 @@ function Game({ boot }: { boot: Boot }) {
         )}
       </main>
       <footer className="controls-hint">
-        Arrows / WASD / HJKL move · Click to backtrack · Drag from player to trace · Scroll zoom · F fit
-        {session.settings.hints > 0 && ' · E hint'} · T breadcrumbs · G give up · N new · R retry
+        {touch ? (
+          <>
+            Drag to move · Tap to backtrack · Two fingers to pan · Pinch to zoom
+            {session.settings.hints > 0 && ' · Hint in the header'}
+          </>
+        ) : (
+          <>
+            Arrows / WASD / HJKL move · Click to backtrack · Drag from player to trace · Scroll zoom · F fit
+            {session.settings.hints > 0 && ' · E hint'} · T breadcrumbs · G give up · N new · R retry
+          </>
+        )}
       </footer>
 
       {dialog?.kind === 'settings' && (

@@ -58,9 +58,37 @@ export function createRng(seed: string): Rng {
   }
 }
 
+/** Random bytes from the best source available, falling back to Math.random. */
+function randomBytes(length: number): Uint8Array {
+  const bytes = new Uint8Array(length)
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes)
+    return bytes
+  }
+  for (let i = 0; i < length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  return bytes
+}
+
 /** Short, human-friendly random seed, e.g. "K3F9Q2A". */
 export function randomSeed(): string {
-  const buf = new Uint32Array(1)
-  globalThis.crypto.getRandomValues(buf)
-  return buf[0].toString(36).toUpperCase().padStart(7, '0')
+  const [a, b, c, d] = randomBytes(4)
+  return (((a << 24) | (b << 16) | (c << 8) | d) >>> 0).toString(36).toUpperCase().padStart(7, '0')
+}
+
+/**
+ * Unique id for saved records and daily attempts.
+ *
+ * `crypto.randomUUID()` exists only in secure contexts, so a page served over
+ * plain HTTP — a preview on the local network, an internal host — does not have
+ * it. Since ids are generated while saving a finished run, missing it used to
+ * throw inside a React effect and take the whole app down with it.
+ */
+export function randomId(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  const bytes = randomBytes(16)
+  // Version 4, variant 1, as RFC 4122 lays them out.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

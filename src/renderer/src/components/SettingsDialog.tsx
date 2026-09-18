@@ -79,7 +79,7 @@ export function SettingsDialog({ settings, hasSavedDefaults, onStart, onSaveDefa
         />
         <p className="help">
           {isDaily
-            ? `Today's standard maze, the same for everyone so times can be compared: ${describeModifiers(daily, todaySeed)}. A new one starts at 00:00 UTC. Solve it to unlock the Daily Doozie, a hard mode daily.`
+            ? `Today's standard maze, the same for everyone so times can be compared: ${describeModifiers(daily, todaySeed)}. A new one starts at midnight, your time. Solve it to unlock the Daily Doozie, a hard mode daily.`
             : 'A random maze with your own algorithm, size and modifiers.'}
         </p>
       </div>

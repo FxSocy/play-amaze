@@ -4,6 +4,7 @@ import { dailyPoints, dailyShareText, type DailyOutcome, type DailyResult } from
 import { formatTime } from '../../../core/records'
 import type { GameSession } from '../../../core/session'
 import { describeModifiers } from '../../../core/settings'
+import { copyText } from '../clipboard'
 import { Dialog } from './Dialog'
 
 export function CopyScoreButton({
@@ -17,7 +18,8 @@ export function CopyScoreButton({
 }) {
   const [copied, setCopied] = useState(false)
   const copy = (): void => {
-    void navigator.clipboard.writeText(dailyShareText(result, outcome)).then(() => {
+    void copyText(dailyShareText(result, outcome)).then((ok) => {
+      if (!ok) return
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
     })

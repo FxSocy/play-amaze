@@ -10,7 +10,9 @@ import type { FogLevel, GameSettings } from './settings'
  * difficulty-affecting setting is derived from the date-based seed alone.
  *
  * Changing anything in this file (or the generators) changes past and present
- * daily mazes for every player, so treat these values as frozen.
+ * daily mazes for every player, so treat these values as frozen. What is frozen
+ * is the mapping from a seed to a maze: which calendar date a player is offered
+ * is a separate question, answered by their own clock in `dailySeed`.
  */
 export type DailyKind = 'daily' | 'doozie'
 
@@ -46,11 +48,23 @@ export const DAILY_HEIGHT = DAILY_STANDARDS.daily.height
 
 const DAILY_SEED = /^(DAILY|DOOZIE)-(\d{4}-\d{2}-\d{2})$/
 
-/** Seed for a daily maze. Uses the UTC date so every install agrees regardless of timezone. */
+/**
+ * Seed for a daily maze, from the player's own date.
+ *
+ * The maze itself is not affected: `DAILY-2026-09-18` is the same maze for
+ * everyone, and times for a date stay comparable. What the local date decides is
+ * *when* a player is offered it — at their midnight, like every other daily
+ * puzzle, rather than at 00:00 UTC, which lands mid-morning or mid-evening
+ * depending on where they live.
+ *
+ * The cost is that a player who changes their clock can reach the next day's
+ * maze early. Scores are stored per device anyway, so this only lets someone
+ * spoil their own puzzle.
+ */
 export function dailySeed(date: Date = new Date(), kind: DailyKind = 'daily'): string {
-  const y = date.getUTCFullYear()
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(date.getUTCDate()).padStart(2, '0')
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
   return `${DAILY_STANDARDS[kind].prefix}${y}-${m}-${d}`
 }
 

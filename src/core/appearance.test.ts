@@ -42,9 +42,18 @@ describe('appearance', () => {
   })
 
   it('keeps valid choices and normalises custom colours', () => {
-    const appearance = { theme: 'tokyo-night', mazeStyle: 'retro', dotShape: 'star', dotColor: '#FFAA00' }
+    const appearance = {
+      theme: 'tokyo-night',
+      mazeStyle: 'retro',
+      dotShape: 'star',
+      dotColor: '#FFAA00',
+      touchDpad: true,
+      touchHintSeen: true
+    }
     expect(sanitizeAppearance(appearance)).toEqual({ ...appearance, dotColor: '#ffaa00' })
     expect(sanitizeAppearance({ dotColor: '#fff' }).dotColor).toBeNull()
+    // Touch preferences are booleans or nothing.
+    expect(sanitizeAppearance({ touchDpad: 'yes' }).touchDpad).toBe(false)
     for (const swatch of DOT_COLOR_SWATCHES) expect(sanitizeAppearance({ dotColor: swatch }).dotColor).toBe(swatch)
   })
 

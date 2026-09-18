@@ -25,6 +25,17 @@ const custom: GameSettings = {
   breadcrumbs: true
 }
 
+/** Runs `fn` as if the machine were somewhere else. */
+function withTimeZone<T>(timeZone: string, fn: () => T): T {
+  const previous = process.env.TZ
+  process.env.TZ = timeZone
+  try {
+    return fn()
+  } finally {
+    process.env.TZ = previous
+  }
+}
+
 const GOLDEN = {
   'DAILY-2026-09-17': { algorithm: 'prims', start: 89, end: 299, walls: 2916307200 },
   'DAILY-2027-01-01': { algorithm: 'wilsons', start: 570, end: 180, walls: 3026782561 },
@@ -33,10 +44,34 @@ const GOLDEN = {
 }
 
 describe('daily maze', () => {
-  it('derives the seed from the UTC date, not local time', () => {
-    expect(dailySeed(new Date('2026-09-17T00:30:00Z'))).toBe('DAILY-2026-09-17')
-    expect(dailySeed(new Date('2026-09-17T23:59:59Z'))).toBe('DAILY-2026-09-17')
-    expect(dailySeed(new Date('2026-09-18T00:00:00Z'))).toBe('DAILY-2026-09-18')
+  it("derives the seed from the player's own date", () => {
+    // Local components in, local date out, wherever this runs.
+    expect(dailySeed(new Date(2026, 8, 17, 0, 30))).toBe('DAILY-2026-09-17')
+    expect(dailySeed(new Date(2026, 8, 17, 23, 59, 59))).toBe('DAILY-2026-09-17')
+    expect(dailySeed(new Date(2026, 8, 18, 0, 0, 0))).toBe('DAILY-2026-09-18')
+  })
+
+  it('rolls over at local midnight, not at 00:00 UTC', () => {
+    // One instant, read from two places: 02:00 UTC is still the 17th in New York
+    // and already the 18th in Tokyo, and each player gets their own day's maze.
+    const instant = new Date('2026-09-18T02:00:00Z')
+    expect(withTimeZone('America/New_York', () => dailySeed(instant))).toBe('DAILY-2026-09-17')
+    expect(withTimeZone('Asia/Tokyo', () => dailySeed(instant))).toBe('DAILY-2026-09-18')
+    expect(withTimeZone('Asia/Tokyo', () => dailySeed(instant, 'doozie'))).toBe('DOOZIE-2026-09-18')
+  })
+
+  it('gives every player the same maze for a given date', () => {
+    // The point of local rollover is when a maze appears, not which maze it is.
+    const fingerprint = (tz: string): unknown =>
+      withTimeZone(tz, () => {
+        const seed = dailySeed(new Date('2026-09-18T02:00:00Z'))
+        const session = new GameSession(dailySettings(DEFAULT_SETTINGS, 'DAILY-2026-09-17'), 'DAILY-2026-09-17')
+        return { seed, start: session.maze.start, end: session.maze.end, walls: hashString(session.maze.walls.join('')) }
+      })
+    const newYork = fingerprint('America/New_York') as { seed: string }
+    const tokyo = fingerprint('Asia/Tokyo') as { seed: string }
+    expect(newYork.seed).not.toBe(tokyo.seed)
+    expect({ ...newYork, seed: null }).toEqual({ ...tokyo, seed: null })
   })
 
   it('recognises daily seeds', () => {
@@ -93,7 +128,7 @@ describe('daily maze', () => {
 describe('Daily Doozie', () => {
   const date = new Date('2026-09-17T12:00:00Z')
 
-  it('has its own seed for the same UTC day', () => {
+  it('has its own seed for the same day', () => {
     const seed = dailySeed(date, 'doozie')
     expect(seed).toBe('DOOZIE-2026-09-17')
     expect(isDailySeed(seed)).toBe(true)

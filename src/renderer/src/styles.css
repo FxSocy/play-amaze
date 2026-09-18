@@ -19,12 +19,20 @@ body,
   margin: 0;
 }
 
+/* Dynamic viewport units keep the layout clear of mobile browser chrome. */
+#root {
+  height: 100dvh;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font: 14px/1.4 var(--font);
   overflow: hidden;
   user-select: none;
+  /* No pull-to-refresh or rubber-banding while dragging on the canvas. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 .mono {
@@ -46,6 +54,9 @@ body {
   flex-wrap: wrap;
   gap: 8px 16px;
   padding: 8px 16px;
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -201,6 +212,7 @@ body {
 .controls-hint {
   flex: none;
   padding: 5px 16px;
+  padding-bottom: calc(5px + env(safe-area-inset-bottom, 0px));
   background: var(--surface);
   border-top: 1px solid var(--border);
   color: var(--text-muted);
@@ -609,4 +621,366 @@ body {
   border: 0;
   background: none;
   cursor: pointer;
+}
+
+/* Crash screen, so a failure is never just a blank page. */
+.crash {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.crash-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(520px, 100%);
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.crash-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.crash-detail {
+  width: 100%;
+  margin: 0;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: 12px/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  user-select: text;
+}
+
+/* --- Small screens and touch ------------------------------------------------
+ *
+ * Phase 1 of mobile support: fit the existing UI onto a phone. The header keeps
+ * the seed label and the run's stats, drops what is only context, and lets its
+ * action row scroll sideways rather than stacking into four rows. A purpose-built
+ * compact HUD is phase 2 — see docs/mobile-support.md.
+ */
+@media (max-width: 720px), (max-height: 480px) {
+  .hud {
+    gap: 6px 10px;
+    padding: 6px 10px;
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    padding-left: calc(10px + env(safe-area-inset-left, 0px));
+    padding-right: calc(10px + env(safe-area-inset-right, 0px));
+  }
+
+  .hud-group {
+    gap: 8px;
+  }
+
+  /* The app's name and the run's modifiers are the first things to go. */
+  .brand,
+  .modifiers,
+  .seed-value {
+    display: none;
+  }
+
+  .seed {
+    padding: 4px 6px;
+  }
+
+  .stat-value {
+    font-size: 15px;
+  }
+
+  .btn {
+    padding: 6px 10px;
+  }
+
+  .dialog {
+    padding: 16px;
+    max-height: calc(100dvh - 24px);
+  }
+
+  .backdrop {
+    padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .results {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .start-card {
+    padding: 18px;
+  }
+
+  .controls-hint {
+    font-size: 11px;
+  }
+}
+
+/* Touch targets, whatever the screen size. */
+@media (pointer: coarse) {
+  .btn,
+  .seed,
+  .segmented button {
+    min-height: 40px;
+  }
+
+  .dialog {
+    user-select: text;
+  }
+}
+
+/* --- The phone header and its menu ------------------------------------------
+ *
+ * Phase 2 of mobile support: one row of what matters — which run this is, the
+ * time and moves — with everything else in a sheet from the bottom of the
+ * screen, where a thumb reaches comfortably.
+ */
+.hud-compact {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.hud-compact .stat {
+  gap: 4px;
+}
+
+.hud-compact .stat-label {
+  display: none;
+}
+
+.hud-compact .stat-value {
+  font-size: 16px;
+  min-width: auto;
+}
+
+/* Time reads better with a fixed width so the row doesn't jiggle every tick. */
+.hud-compact .stat:first-of-type .stat-value {
+  min-width: 5.5ch;
+}
+
+.hud-compact .hud-menu {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(10, 12, 16, 0.5);
+}
+
+.sheet {
+  width: 100%;
+  max-height: 85dvh;
+  overflow-y: auto;
+  padding: 0 8px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px 16px 0 0;
+  background: var(--surface);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.3);
+}
+
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  margin: 8px auto 6px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.sheet-summary {
+  margin: 2px 10px 8px;
+}
+
+.sheet-score {
+  padding: 0 6px 8px;
+}
+
+.sheet-score .btn {
+  width: 100%;
+}
+
+.sheet-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-item:active:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.sheet-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sheet-item.primary {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sheet-item.active {
+  color: var(--accent);
+}
+
+.sheet-item.danger {
+  color: var(--danger);
+}
+
+/* Groups the sheet into play controls, view controls and giving up. */
+.sheet-item.separated {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+}
+
+.sheet-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* --- Touch polish (phase 3) -------------------------------------------------
+ *
+ * An optional direction pad for players who would rather press than drag, and a
+ * one-time explanation of the gestures, which are otherwise invisible.
+ */
+.dpad {
+  position: absolute;
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 2px;
+  touch-action: none;
+}
+
+.dpad-key {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  /* The pad is played by touch; text selection and callouts get in the way. */
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.dpad-key:active:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.dpad-key:disabled {
+  opacity: 0.35;
+}
+
+.dpad-up {
+  grid-area: 1 / 2;
+}
+
+.dpad-left {
+  grid-area: 2 / 1;
+}
+
+.dpad-right {
+  grid-area: 2 / 3;
+}
+
+.dpad-down {
+  grid-area: 3 / 2;
+}
+
+.touch-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(360px, calc(100% - 24px));
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.touch-hint h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.touch-hint ul {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.touch-hint li {
+  margin-bottom: 4px;
+}
+
+.touch-hint-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.touch-hint-actions .btn {
+  flex: 1;
+}
+
+/*
+ * Landscape on a phone: almost no height to spare, so the keyboard hint goes and
+ * the pad shrinks to keep the maze the biggest thing on screen.
+ */
+@media (max-height: 480px) and (orientation: landscape) {
+  .controls-hint {
+    display: none;
+  }
+
+  .hud {
+    padding-top: calc(4px + env(safe-area-inset-top, 0px));
+    padding-bottom: 4px;
+  }
+
+  .dpad {
+    grid-template-columns: repeat(3, 44px);
+    grid-template-rows: repeat(3, 44px);
+  }
+
+  .touch-hint {
+    bottom: 8px;
+    padding: 10px 12px;
+  }
+
+  .touch-hint ul {
+    margin-bottom: 8px;
+  }
 }

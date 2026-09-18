@@ -14,6 +14,12 @@ export interface Viewport {
 
 const PADDING = 24
 export const MAX_SCALE = 96
+/**
+ * Cells smaller than this are hard to tap and hard to read. Fitting a 30x20
+ * maze to a phone gives roughly 11px cells, so touch devices start zoomed in on
+ * the player instead of fitting the whole maze; Fit still fits.
+ */
+export const MIN_TOUCH_SCALE = 28
 
 export function fitScale(view: Viewport, mazeW: number, mazeH: number): number {
   const scale = Math.min((view.width - PADDING * 2) / mazeW, (view.height - PADDING * 2) / mazeH)
@@ -28,6 +34,24 @@ export function fitCamera(view: Viewport, mazeW: number, mazeH: number): Camera 
     y: (view.height - mazeH * scale) / 2,
     fit: true
   }
+}
+
+/** Centres a cell at a given scale, clamped so the maze stays on screen. */
+export function focusCamera(
+  view: Viewport,
+  mazeW: number,
+  mazeH: number,
+  cx: number,
+  cy: number,
+  scale: number
+): Camera {
+  const capped = Math.max(1, Math.min(MAX_SCALE, scale))
+  return clampCamera(
+    { scale: capped, x: view.width / 2 - cx * capped, y: view.height / 2 - cy * capped, fit: false },
+    view,
+    mazeW,
+    mazeH
+  )
 }
 
 /** Keeps at least part of the maze on screen so it can't be panned away and lost. */

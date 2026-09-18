@@ -1,4 +1,5 @@
 import { dailySettings, isDailySeed } from './daily'
+import { randomId } from './rng'
 import type { GameSession } from './session'
 import { describeModifiers, modifierKey, sanitizeSettings, type GameSettings } from './settings'
 
@@ -18,7 +19,7 @@ export interface TimeRecord {
 export function createRecord(session: GameSession): TimeRecord {
   if (!session.solved || session.finishedAt === null) throw new Error('Session was not solved')
   return {
-    id: globalThis.crypto.randomUUID(),
+    id: randomId(),
     key: modifierKey(session.settings, session.seed),
     settings: session.settings,
     seed: session.seed,

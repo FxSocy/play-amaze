@@ -1,6 +1,10 @@
 /**
- * Cosmetic preferences: colour theme, maze drawing style and the player dot.
- * None of these affect gameplay or best times.
+ * Per-device preferences: colour theme, maze drawing style, the player dot, and
+ * how touch controls behave. None of these affect gameplay or best times.
+ *
+ * The touch options live here rather than in GameSettings because they are
+ * properties of the device you are playing on, and they save the moment you
+ * change them instead of waiting for "Save as default".
  */
 
 export type ThemeId = 'light' | 'dark' | 'tokyo-night' | 'sage' | 'ember' | 'blossom' | 'terminal'
@@ -14,6 +18,10 @@ export interface Appearance {
   dotShape: DotShape
   /** '#rrggbb', or null to use the theme's player colour. */
   dotColor: string | null
+  /** Show the on-screen direction pad on touch devices. */
+  touchDpad: boolean
+  /** Set once the player has seen the touch controls explained, so it only shows once. */
+  touchHintSeen: boolean
 }
 
 /** Colours for the app chrome and the canvas. Every theme defines all of them. */
@@ -302,7 +310,9 @@ export const DEFAULT_APPEARANCE: Readonly<Appearance> = {
   theme: 'system',
   mazeStyle: 'classic',
   dotShape: 'circle',
-  dotColor: null
+  dotColor: null,
+  touchDpad: false,
+  touchHintSeen: false
 }
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
@@ -319,7 +329,9 @@ export function sanitizeAppearance(raw: unknown): Appearance {
     theme: oneOf(src.theme, THEME_CHOICES, d.theme),
     mazeStyle: oneOf(src.mazeStyle, MAZE_STYLE_IDS, d.mazeStyle),
     dotShape: oneOf(src.dotShape, DOT_SHAPE_IDS, d.dotShape),
-    dotColor: typeof src.dotColor === 'string' && HEX_COLOR.test(src.dotColor) ? src.dotColor.toLowerCase() : null
+    dotColor: typeof src.dotColor === 'string' && HEX_COLOR.test(src.dotColor) ? src.dotColor.toLowerCase() : null,
+    touchDpad: typeof src.touchDpad === 'boolean' ? src.touchDpad : d.touchDpad,
+    touchHintSeen: typeof src.touchHintSeen === 'boolean' ? src.touchHintSeen : d.touchHintSeen
   }
 }
 

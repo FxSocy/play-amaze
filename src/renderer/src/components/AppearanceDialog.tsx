@@ -17,6 +17,7 @@ import { findPath } from '../../../core/solver'
 import { GameSession } from '../../../core/session'
 import { DEFAULT_SETTINGS } from '../../../core/settings'
 import { drawDot, drawScene } from '../game/draw'
+import { useIsTouch } from '../theme'
 import { Dialog } from './Dialog'
 
 interface Props {
@@ -109,6 +110,7 @@ function ThemeSwatch({ choice, prefersDark }: { choice: ThemeChoice; prefersDark
 }
 
 export function AppearanceDialog({ appearance, prefersDark, onChange, onClose }: Props) {
+  const touch = useIsTouch()
   const palette = resolvePalette(appearance, prefersDark)
   const update = (patch: Partial<Appearance>): void => onChange({ ...appearance, ...patch })
   const bigPreview = useMemo(() => previewSession(14, 6, 9), [])
@@ -222,6 +224,33 @@ export function AppearanceDialog({ appearance, prefersDark, onChange, onClose }:
           </label>
         </div>
       </div>
+
+      {touch && (
+        <div className="field">
+          <label>Touch controls</label>
+          <div className="segmented">
+            <button
+              className={appearance.touchDpad ? 'active' : ''}
+              aria-pressed={appearance.touchDpad}
+              onClick={() => update({ touchDpad: true })}
+            >
+              Direction pad
+            </button>
+            <button
+              className={appearance.touchDpad ? '' : 'active'}
+              aria-pressed={!appearance.touchDpad}
+              onClick={() => update({ touchDpad: false })}
+            >
+              Drag to move
+            </button>
+          </div>
+          <p className="help">
+            {appearance.touchDpad
+              ? 'Arrow buttons sit in the corner of the maze. Dragging still works too.'
+              : 'Drag anywhere on the maze to move; hold to keep going.'}
+          </p>
+        </div>
+      )}
 
       <footer className="dialog-footer">
         <div className="footer-left">
