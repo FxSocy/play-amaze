@@ -7,16 +7,22 @@ export interface BfsResult {
   prev: Int32Array
 }
 
+export interface SearchOptions {
+  /** Restricts which cells may be entered; the origin is always allowed. */
+  passable?: (cell: number) => boolean
+  /** Stops the search this many steps out. */
+  maxDepth?: number
+}
+
 /**
- * Breadth-first search through open passages. `passable` restricts which
- * cells may be entered (the origin is always allowed); `maxDepth` stops early.
+ * Breadth-first search through open passages.
+ *
+ * This is the plain-maze search: walls are the only thing it knows about. A
+ * maze carrying Arcade features needs `planRoute` in `arcade.ts` instead, which
+ * understands portals, keys, gates and one-way doors.
  */
-export function bfs(
-  maze: Maze,
-  from: number,
-  passable?: (cell: number) => boolean,
-  maxDepth = Infinity
-): BfsResult {
+export function bfs(maze: Maze, from: number, options: SearchOptions = {}): BfsResult {
+  const { passable, maxDepth = Infinity } = options
   const n = cellCount(maze)
   const dist = new Int32Array(n).fill(-1)
   const prev = new Int32Array(n).fill(-1)
@@ -39,13 +45,8 @@ export function bfs(
 }
 
 /** Shortest path including both endpoints, or null when unreachable. */
-export function findPath(
-  maze: Maze,
-  from: number,
-  to: number,
-  passable?: (cell: number) => boolean
-): number[] | null {
-  const { dist, prev } = bfs(maze, from, passable)
+export function findPath(maze: Maze, from: number, to: number, options: SearchOptions = {}): number[] | null {
+  const { dist, prev } = bfs(maze, from, options)
   if (dist[to] === -1) return null
   const path: number[] = []
   for (let cell = to; cell !== -1; cell = prev[cell]) path.push(cell)

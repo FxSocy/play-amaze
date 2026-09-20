@@ -1,3 +1,4 @@
+import { ARCADE_LABELS, ARCADE_LEVELS, type ArcadeLevel } from './arcade'
 import { dailyDate, dailyLabel } from './daily'
 import { ALGORITHM_IDS, GENERATORS, type AlgorithmId } from './generators'
 
@@ -16,6 +17,11 @@ export interface GameSettings {
   fog: FogLevel
   /** Hints available per maze; 0 disables the hint modifier. */
   hints: HintCount
+  /**
+   * Arcade features on a custom maze: portals, keys, gates, one-way doors and
+   * wall-break charges. The daily mazes set their own and ignore this.
+   */
+  arcade: ArcadeLevel
   /** Display preference: draw the passages already walked. */
   breadcrumbs: boolean
 }
@@ -50,7 +56,8 @@ export const DEFAULT_SETTINGS: Readonly<GameSettings> = {
   seedMode: 'daily',
   fog: 'off',
   hints: 0,
-  breadcrumbs: false
+  arcade: 'off',
+  breadcrumbs: true
 }
 
 export function resolveSize(settings: GameSettings): { width: number; height: number } {
@@ -82,6 +89,7 @@ export function sanitizeSettings(raw: unknown): GameSettings {
     seedMode: oneOf(src.seedMode, SEED_MODES, d.seedMode),
     fog: oneOf(src.fog, FOG_LEVEL_IDS, d.fog),
     hints: oneOf(src.hints, HINT_OPTIONS, d.hints),
+    arcade: oneOf(src.arcade, ARCADE_LEVELS, d.arcade),
     breadcrumbs: typeof src.breadcrumbs === 'boolean' ? src.breadcrumbs : d.breadcrumbs
   }
 }
@@ -94,7 +102,7 @@ export function sanitizeSettings(raw: unknown): GameSettings {
 export function modifierKey(settings: GameSettings, seed: string): string {
   if (settings.seedMode === 'daily') return `daily|${seed}`
   const { width, height } = resolveSize(settings)
-  return `${settings.algorithm}|${width}x${height}|fog:${settings.fog}|hints:${settings.hints}`
+  return `${settings.algorithm}|${width}x${height}|fog:${settings.fog}|hints:${settings.hints}|arcade:${settings.arcade}`
 }
 
 export function describeModifiers(settings: GameSettings, seed: string): string {
@@ -103,5 +111,6 @@ export function describeModifiers(settings: GameSettings, seed: string): string 
   if (settings.seedMode === 'daily') parts.unshift(`${dailyLabel(seed)} ${dailyDate(seed)}`)
   if (settings.fog !== 'off') parts.push(`${FOG_LEVELS[settings.fog].label} fog`)
   if (settings.hints > 0) parts.push(`${settings.hints} hint${settings.hints === 1 ? '' : 's'}`)
+  if (settings.arcade !== 'off') parts.push(`${ARCADE_LABELS[settings.arcade]} arcade`)
   return parts.join(' · ')
 }

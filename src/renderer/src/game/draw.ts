@@ -1,5 +1,5 @@
 import type { DotShape, MazeStyleId, Palette } from '../../../core/appearance'
-import { WALL_E, WALL_N, WALL_S, WALL_W } from '../../../core/maze'
+import { DIRECTIONS, DIRECTION_LIST, WALL_E, WALL_N, WALL_S, WALL_W, type Direction } from '../../../core/maze'
 import type { GameSession } from '../../../core/session'
 import type { Camera, Viewport } from './camera'
 
@@ -235,6 +235,10 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
   stroke(seenWalls, palette.wallSeen, false)
   stroke(visibleWalls, palette.wall, true)
 
+  if (session.features) {
+    drawFeatures(ctx, scene, palette, style, px, py, s, x0, x1, y0, y1)
+  }
+
   if (scene.showTrail) {
     // Each passage is stored on both cells; draw it once from its west/north cell.
     // Start one cell before the viewport so passages crossing its edge are included.
@@ -269,8 +273,15 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
     ctx.lineJoin = 'round'
     ctx.setLineDash([Math.max(3, s * 0.25), Math.max(3, s * 0.2)])
     ctx.beginPath()
-    ctx.moveTo(...center(session.solution[0]))
-    for (const cell of session.solution.slice(1)) ctx.lineTo(...center(cell))
+    let pen = session.solution[0]
+    ctx.moveTo(...center(pen))
+    for (const cell of session.solution.slice(1)) {
+      // A portal jump is not a walk between two cells, so the route lifts off
+      // rather than drawing a line straight across the maze.
+      if (adjacent(w, pen, cell)) ctx.lineTo(...center(cell))
+      else ctx.moveTo(...center(cell))
+      pen = cell
+    }
     ctx.stroke()
     ctx.setLineDash([])
   }
@@ -308,6 +319,220 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
   drawDot(ctx, scene.dotShape, playerX, playerY, Math.max(2.5, s * 0.3), palette.player, s * style.glow)
 
   if (scene.style === 'retro') drawScanlines(ctx, cam, view, w * s, h * s)
+}
+
+/** Whether two cells share an edge, which a portal jump's endpoints do not. */
+function adjacent(width: number, a: number, b: number): boolean {
+  const dx = Math.abs((a % width) - (b % width))
+  const dy = Math.abs(Math.floor(a / width) - Math.floor(b / width))
+  return dx + dy === 1 && (dx === 0 || dy === 0)
+}
+
+/**
+ * Arcade features, drawn over the floor and under the player: portals, keys,
+ * gates and the chevrons that mark a one-way door.
+ *
+ * Colours come from the theme the player already chose, so every theme gets a
+ * readable Arcade maze: the two portal pairs borrow the accent and Doozie
+ * colours, keys the hint colour and a locked gate the danger colour. Charges
+ * are the exception and carry a colour of their own — `success` sits right on
+ * top of `exit` in several themes, and a second green marker would read as a
+ * second way out.
+ */
+function drawFeatures(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  palette: Palette,
+  style: StyleSpec,
+  px: (x: number) => number,
+  py: (y: number) => number,
+  s: number,
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number
+): void {
+  const { session } = scene
+  const features = session.features!
+  const w = session.maze.width
+  const pairColor = (cell: number): string => {
+    const index = features.portalPairs.findIndex(([a, b]) => a === cell || b === cell)
+    return index % 2 === 0 ? palette.accent : palette.doozie
+  }
+
+  ctx.save()
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const cell = y * w + x
+      if (!session.explored[cell]) continue
+      const cx = px(x + 0.5)
+      const cy = py(y + 0.5)
+      const glow = style.glow > 0 ? s * style.glow : 0
+
+      if (features.portals[cell] >= 0) {
+        drawPortal(ctx, cx, cy, s, pairColor(cell), glow)
+      }
+      if (session.keyAt(cell)) {
+        drawKey(ctx, cx, cy, s, palette.hint, glow)
+      }
+      if (session.boxAt(cell)) {
+        drawMysteryBox(ctx, cx, cy, s, palette.charge, glow)
+      }
+      const gate = session.gateAt(cell)
+      if (gate) {
+        drawGate(ctx, cx, cy, s, gate === 'locked' ? palette.danger : palette.wallSeen, gate === 'open')
+      }
+      const doors = features.oneWay[cell]
+      if (doors) {
+        for (const dir of DIRECTION_LIST) {
+          if (doors & DIRECTIONS[dir].wall) drawOneWay(ctx, px(x), py(y), s, dir, palette.route)
+        }
+      }
+    }
+  }
+  ctx.restore()
+}
+
+/** Two rings, like something you could step into. */
+function drawPortal(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  color: string,
+  glow: number
+): void {
+  ctx.save()
+  if (glow > 0) {
+    ctx.shadowColor = color
+    ctx.shadowBlur = glow
+  }
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.2, s * 0.09)
+  ctx.beginPath()
+  ctx.arc(cx, cy, s * 0.32, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.globalAlpha = 0.55
+  ctx.beginPath()
+  ctx.arc(cx, cy, s * 0.16, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A key: a ring with a toothed stem. */
+function drawKey(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  color: string,
+  glow: number
+): void {
+  const r = s * 0.13
+  ctx.save()
+  if (glow > 0) {
+    ctx.shadowColor = color
+    ctx.shadowBlur = glow
+  }
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.2, s * 0.08)
+  ctx.beginPath()
+  ctx.arc(cx - r, cy - r * 0.2, r, 0, Math.PI * 2)
+  ctx.moveTo(cx, cy)
+  ctx.lineTo(cx + r * 1.9, cy + r * 1.5)
+  ctx.moveTo(cx + r * 1.1, cy + r * 0.7)
+  ctx.lineTo(cx + r * 1.7, cy + r * 0.1)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A mystery box: a boxed question mark, waiting at the end of some branch. */
+function drawMysteryBox(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  color: string,
+  glow: number
+): void {
+  const half = s * 0.3
+  ctx.save()
+  if (glow > 0) {
+    ctx.shadowColor = color
+    ctx.shadowBlur = glow
+  }
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.2, s * 0.08)
+  ctx.beginPath()
+  ctx.roundRect(cx - half, cy - half, half * 2, half * 2, half * 0.35)
+  ctx.stroke()
+  // Below about ten pixels a question mark is a smudge; the box alone still reads.
+  if (s >= 10) {
+    ctx.shadowBlur = 0
+    ctx.fillStyle = color
+    ctx.font = `bold ${Math.round(s * 0.5)}px ui-sans-serif, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('?', cx, cy + s * 0.03)
+  }
+  ctx.restore()
+}
+
+/** A barred gate; once unlocked it fades to a frame the player can walk through. */
+function drawGate(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  color: string,
+  open: boolean
+): void {
+  const half = s * 0.3
+  ctx.save()
+  ctx.globalAlpha = open ? 0.3 : 1
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.2, s * 0.08)
+  ctx.beginPath()
+  ctx.rect(cx - half, cy - half, half * 2, half * 2)
+  if (!open) {
+    for (let i = -1; i <= 1; i++) {
+      ctx.moveTo(cx + i * half * 0.6, cy - half)
+      ctx.lineTo(cx + i * half * 0.6, cy + half)
+    }
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A chevron on the passage edge, pointing the only way through it. */
+function drawOneWay(
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  s: number,
+  blocked: Direction,
+  color: string
+): void {
+  // `blocked` is the way the player may not leave, so travel points the other way.
+  const { dx, dy } = DIRECTIONS[blocked]
+  const edgeX = left + s * (0.5 + dx * 0.5)
+  const edgeY = top + s * (0.5 + dy * 0.5)
+  const size = s * 0.18
+  // Into the cell, away from the edge.
+  const angle = Math.atan2(-dy, -dx)
+  ctx.save()
+  ctx.translate(edgeX + dx * size * -0.3, edgeY + dy * size * -0.3)
+  ctx.rotate(angle)
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.2, s * 0.08)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  ctx.moveTo(-size * 0.5, -size * 0.7)
+  ctx.lineTo(size * 0.45, 0)
+  ctx.lineTo(-size * 0.5, size * 0.7)
+  ctx.stroke()
+  ctx.restore()
 }
 
 function strokeWalls(

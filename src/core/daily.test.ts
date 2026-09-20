@@ -84,7 +84,8 @@ describe('daily maze', () => {
     const seed = 'DAILY-2026-09-17'
     const fromCustom = dailySettings(custom, seed)
     const fromDefaults = dailySettings(DEFAULT_SETTINGS, seed)
-    expect({ ...fromCustom, breadcrumbs: false }).toEqual(fromDefaults)
+    // Breadcrumbs are a display preference, so they're normalised out of the comparison.
+    expect({ ...fromCustom, breadcrumbs: false }).toEqual({ ...fromDefaults, breadcrumbs: false })
     expect(fromCustom.seedMode).toBe('daily')
     expect(fromCustom.fog).toBe('off')
     expect(fromCustom.hints).toBe(0)
@@ -143,7 +144,7 @@ describe('Daily Doozie', () => {
   it('is a harder standard than the daily maze, independent of player settings', () => {
     const seed = dailySeed(date, 'doozie')
     const doozie = dailySettings(custom, seed)
-    expect({ ...doozie, breadcrumbs: false }).toEqual(dailySettings(DEFAULT_SETTINGS, seed))
+    expect({ ...doozie, breadcrumbs: false }).toEqual({ ...dailySettings(DEFAULT_SETTINGS, seed), breadcrumbs: false })
     expect(resolveSize(doozie)).toEqual({ width: DAILY_STANDARDS.doozie.width, height: DAILY_STANDARDS.doozie.height })
     expect(DAILY_STANDARDS.doozie.width * DAILY_STANDARDS.doozie.height).toBeGreaterThan(DAILY_WIDTH * DAILY_HEIGHT)
     expect(doozie.fog).not.toBe('off')

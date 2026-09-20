@@ -26,11 +26,11 @@ describe('solver', () => {
 
   it('respects the passable filter', () => {
     const maze = uMaze()
-    expect(findPath(maze, 0, 2, (cell) => cell !== 4)).toBeNull()
+    expect(findPath(maze, 0, 2, { passable: (cell) => cell !== 4 })).toBeNull()
   })
 
   it('stops at maxDepth', () => {
-    const { dist } = bfs(uMaze(), 0, undefined, 2)
+    const { dist } = bfs(uMaze(), 0, { maxDepth: 2 })
     expect(dist[cellAt(uMaze(), 1, 1)]).toBe(2)
     expect(dist[5]).toBe(-1)
   })

@@ -189,6 +189,36 @@ body {
   background: transparent;
 }
 
+/*
+ * The four modes are the app's navigation, so they read as one segmented
+ * control rather than four loose buttons — everything else lives behind Menu.
+ */
+.modes {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 3px);
+  background: var(--surface-2);
+}
+
+.modes .btn.mode {
+  padding: 6px 10px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.modes .btn.mode:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.modes .btn.mode.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
 /* Stage */
 .stage {
   position: relative;
@@ -258,6 +288,11 @@ body {
   display: block;
   margin-bottom: 6px;
   font-weight: 600;
+}
+
+/* A dialog that opens with a line of explanation, before its first field. */
+.dialog-intro {
+  margin-bottom: 16px;
 }
 
 .help {
@@ -400,6 +435,138 @@ body {
 }
 
 /* Daily maze */
+/* While a box's "lights out" is running down. */
+.blind-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, var(--border));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+/*
+ * The mystery box reel, over the maze. It covers the stage so nothing under it
+ * can be clicked while the run is frozen — the session refuses input anyway,
+ * but a maze that visibly ignores taps is worse than one that is plainly busy.
+ */
+.mystery-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.mystery-card {
+  width: min(320px, 100%);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.mystery-card.good {
+  border-color: color-mix(in srgb, var(--success) 60%, var(--border));
+}
+
+.mystery-card.bad {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+
+.mystery-title {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mystery-window {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.mystery-reel {
+  display: flex;
+  flex-direction: column;
+  /*
+   * The reel's resting place is its inline transform — the winning row. The
+   * animation only says where it comes from, so when motion is turned off the
+   * result is simply already there.
+   */
+  animation: mystery-spin 1450ms cubic-bezier(0.12, 0.82, 0.2, 1) forwards;
+}
+
+@keyframes mystery-spin {
+  from {
+    transform: translateY(0);
+  }
+}
+
+.mystery-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.mystery-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.mystery-label {
+  font-weight: 600;
+}
+
+.mystery-blurb {
+  margin: 10px 0 0;
+  min-height: 2.6em;
+  color: var(--text-muted);
+  font-size: 13px;
+  opacity: 0;
+  animation: mystery-reveal 260ms ease-out 1450ms forwards;
+}
+
+@keyframes mystery-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mystery-reel {
+    animation: none;
+  }
+
+  .mystery-blurb {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .start-overlay {
   position: absolute;
   inset: 0;
@@ -472,6 +639,22 @@ body {
 
 .daily-score.doozie {
   background: color-mix(in srgb, var(--doozie) 8%, transparent);
+}
+
+.start-card.arcade {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+.arcade-rules {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  text-align: left;
+}
+
+.arcade-rules strong {
+  color: var(--text);
 }
 
 .start-card.doozie .start-button {
@@ -757,6 +940,16 @@ body {
   display: none;
 }
 
+.stat-icon {
+  display: none;
+}
+
+.hud-compact .stat-icon {
+  display: inline;
+  margin-right: 3px;
+  font-size: 12px;
+}
+
 .hud-compact .stat-value {
   font-size: 16px;
   min-width: auto;
@@ -791,12 +984,82 @@ body {
   box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.3);
 }
 
+/*
+ * The same menu on a big screen. A sheet thrown up from the bottom edge is a
+ * phone idiom: with a mouse and 1400px of window it should behave like what it
+ * is, a dropdown under the button that opened it.
+ */
+@media (min-width: 721px) and (min-height: 481px) {
+  .sheet-backdrop {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0 12px;
+    background: transparent;
+  }
+
+  .sheet {
+    width: 320px;
+    margin-top: 56px;
+    max-height: calc(100dvh - 76px);
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .sheet-handle {
+    display: none;
+  }
+
+  .sheet-item {
+    min-height: 40px;
+    padding: 0 10px;
+  }
+
+  .sheet-summary {
+    margin: 4px 10px 8px;
+  }
+}
+
 .sheet-handle {
   width: 40px;
   height: 4px;
   margin: 8px auto 6px;
   border-radius: 2px;
   background: var(--border);
+}
+
+/*
+ * A phone header has no room for four mode buttons beside the clock, so the
+ * modes head up the menu instead, in their own group above the controls.
+ */
+.sheet-modes {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet-group-label {
+  padding: 2px 14px 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sheet-modes .sheet-item.active {
+  font-weight: 600;
+}
+
+.sheet-modes .sheet-detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
 }
 
 .sheet-summary {

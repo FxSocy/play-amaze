@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { dailySeed, dailySettings } from '../../../core/daily'
+import { ARCADE_LABELS, ARCADE_LEVELS, arcadeSpecFor } from '../../../core/arcade'
 import { ALGORITHM_IDS, GENERATORS } from '../../../core/generators'
 import {
   CUSTOM_SIZE_MAX,
   CUSTOM_SIZE_MIN,
-  describeModifiers,
   FOG_LEVEL_IDS,
   FOG_LEVELS,
   HINT_OPTIONS,
+  resolveSize,
   sanitizeSettings,
   SIZE_PRESET_IDS,
   SIZE_PRESETS,
@@ -22,6 +22,8 @@ interface Props {
   onSaveDefaults: (settings: GameSettings) => Promise<void>
   onClearDefaults: () => Promise<void>
   onClose: () => void
+  /** Opened by picking Custom, so starting a maze is what the player came for. */
+  autoStart?: boolean
 }
 
 interface SegmentedProps<T extends string | number> {
@@ -49,12 +51,24 @@ function Segmented<T extends string | number>({ value, options, label, onChange 
   )
 }
 
-export function SettingsDialog({ settings, hasSavedDefaults, onStart, onSaveDefaults, onClearDefaults, onClose }: Props) {
+/**
+ * Custom maze setup. The three daily mazes are standards nobody configures, so
+ * everything here shapes a maze of the player's own — which is why picking
+ * Custom in the header opens this rather than starting a run straight away.
+ */
+export function SettingsDialog({
+  settings,
+  hasSavedDefaults,
+  onStart,
+  onSaveDefaults,
+  onClearDefaults,
+  onClose,
+  autoStart = false
+}: Props) {
   const [draft, setDraft] = useState(settings)
   const [status, setStatus] = useState<string | null>(null)
-  const isDaily = draft.seedMode === 'daily'
-  const todaySeed = dailySeed()
-  const daily = dailySettings(draft, todaySeed)
+  const size = resolveSize(draft)
+  const spec = arcadeSpecFor(draft.arcade, size.width, size.height)
   const update = (patch: Partial<GameSettings>): void => {
     setDraft((d) => ({ ...d, ...patch }))
     setStatus(null)
@@ -68,92 +82,93 @@ export function SettingsDialog({ settings, hasSavedDefaults, onStart, onSaveDefa
   }
 
   return (
-    <Dialog title="Settings" onClose={onClose}>
+    <Dialog title="Custom maze" onClose={onClose}>
+      <p className="help dialog-intro">
+        A random maze with your own algorithm, size and modifiers. Best times are kept per
+        combination, so a foggy 50×32 with portals is never compared with a plain 15×10.
+      </p>
+
       <div className="field">
-        <label>Mode</label>
+        <label>Algorithm</label>
         <Segmented
-          value={draft.seedMode}
-          options={['daily', 'random'] as const}
-          label={(mode) => (mode === 'daily' ? 'Daily maze' : 'Custom')}
-          onChange={(seedMode) => update({ seedMode })}
+          value={draft.algorithm}
+          options={ALGORITHM_IDS}
+          label={(id) => GENERATORS[id].name}
+          onChange={(algorithm) => update({ algorithm })}
         />
-        <p className="help">
-          {isDaily
-            ? `Today's standard maze, the same for everyone so times can be compared: ${describeModifiers(daily, todaySeed)}. A new one starts at midnight, your time. Solve it to unlock the Daily Doozie, a hard mode daily.`
-            : 'A random maze with your own algorithm, size and modifiers.'}
-        </p>
+        <p className="help">{GENERATORS[draft.algorithm].description}</p>
       </div>
 
-      {!isDaily && (
-        <>
-          <div className="field">
-            <label>Algorithm</label>
-            <Segmented
-              value={draft.algorithm}
-              options={ALGORITHM_IDS}
-              label={(id) => GENERATORS[id].name}
-              onChange={(algorithm) => update({ algorithm })}
+      <div className="field">
+        <label>Size</label>
+        <Segmented
+          value={draft.sizePreset}
+          options={SIZE_PRESET_IDS}
+          label={(id) =>
+            id === 'custom' ? 'Custom' : `${SIZE_PRESETS[id].label} ${SIZE_PRESETS[id].width}×${SIZE_PRESETS[id].height}`
+          }
+          onChange={(sizePreset) => update({ sizePreset })}
+        />
+        {draft.sizePreset === 'custom' && (
+          <div className="size-inputs">
+            <input
+              type="number"
+              min={CUSTOM_SIZE_MIN}
+              max={CUSTOM_SIZE_MAX}
+              value={draft.customWidth}
+              onChange={(e) => update({ customWidth: e.target.valueAsNumber })}
+              aria-label="Width"
             />
-            <p className="help">{GENERATORS[draft.algorithm].description}</p>
+            <span>×</span>
+            <input
+              type="number"
+              min={CUSTOM_SIZE_MIN}
+              max={CUSTOM_SIZE_MAX}
+              value={draft.customHeight}
+              onChange={(e) => update({ customHeight: e.target.valueAsNumber })}
+              aria-label="Height"
+            />
+            <span className="help">
+              {CUSTOM_SIZE_MIN}–{CUSTOM_SIZE_MAX} cells
+            </span>
           </div>
+        )}
+      </div>
 
-          <div className="field">
-            <label>Size</label>
-            <Segmented
-              value={draft.sizePreset}
-              options={SIZE_PRESET_IDS}
-              label={(id) =>
-                id === 'custom' ? 'Custom' : `${SIZE_PRESETS[id].label} ${SIZE_PRESETS[id].width}×${SIZE_PRESETS[id].height}`
-              }
-              onChange={(sizePreset) => update({ sizePreset })}
-            />
-            {draft.sizePreset === 'custom' && (
-              <div className="size-inputs">
-                <input
-                  type="number"
-                  min={CUSTOM_SIZE_MIN}
-                  max={CUSTOM_SIZE_MAX}
-                  value={draft.customWidth}
-                  onChange={(e) => update({ customWidth: e.target.valueAsNumber })}
-                  aria-label="Width"
-                />
-                <span>×</span>
-                <input
-                  type="number"
-                  min={CUSTOM_SIZE_MIN}
-                  max={CUSTOM_SIZE_MAX}
-                  value={draft.customHeight}
-                  onChange={(e) => update({ customHeight: e.target.valueAsNumber })}
-                  aria-label="Height"
-                />
-                <span className="help">
-                  {CUSTOM_SIZE_MIN}–{CUSTOM_SIZE_MAX} cells
-                </span>
-              </div>
-            )}
-          </div>
+      <div className="field">
+        <label>Fog of war</label>
+        <Segmented
+          value={draft.fog}
+          options={FOG_LEVEL_IDS}
+          label={(id) => FOG_LEVELS[id].label}
+          onChange={(fog) => update({ fog })}
+        />
+      </div>
 
-          <div className="field">
-            <label>Fog of war</label>
-            <Segmented
-              value={draft.fog}
-              options={FOG_LEVEL_IDS}
-              label={(id) => FOG_LEVELS[id].label}
-              onChange={(fog) => update({ fog })}
-            />
-          </div>
+      <div className="field">
+        <label>Hints</label>
+        <Segmented
+          value={draft.hints}
+          options={HINT_OPTIONS}
+          label={(n) => (n === 0 ? 'Off' : String(n))}
+          onChange={(hints) => update({ hints })}
+        />
+      </div>
 
-          <div className="field">
-            <label>Hints</label>
-            <Segmented
-              value={draft.hints}
-              options={HINT_OPTIONS}
-              label={(n) => (n === 0 ? 'Off' : String(n))}
-              onChange={(hints) => update({ hints })}
-            />
-          </div>
-        </>
-      )}
+      <div className="field">
+        <label>Arcade features</label>
+        <Segmented
+          value={draft.arcade}
+          options={ARCADE_LEVELS}
+          label={(level) => ARCADE_LABELS[level]}
+          onChange={(arcade) => update({ arcade })}
+        />
+        <p className="help">
+          {spec
+            ? `Portals, keys and locked gates, one-way doors and wall-break charges, placed by the seed the way the Daily Arcade's are. On ${size.width}×${size.height}: ${spec.portalPairs} portal pair${spec.portalPairs === 1 ? '' : 's'}, ${spec.gates} gate${spec.gates === 1 ? '' : 's'} with a key each, ${spec.oneWays} one-way door${spec.oneWays === 1 ? '' : 's'}, ${spec.boxes} mystery box${spec.boxes === 1 ? '' : 'es'}.`
+            : 'A plain maze: walls, a start and an exit.'}
+        </p>
+      </div>
 
       <div className="field">
         <label>Breadcrumbs</label>
@@ -182,8 +197,12 @@ export function SettingsDialog({ settings, hasSavedDefaults, onStart, onSaveDefa
           <button className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={() => onStart(sanitizeSettings(draft))}>
-            Start maze
+          <button
+            className="btn btn-primary"
+            onClick={() => onStart(sanitizeSettings({ ...draft, seedMode: 'random' }))}
+            autoFocus={autoStart}
+          >
+            Start custom maze
           </button>
         </div>
       </footer>

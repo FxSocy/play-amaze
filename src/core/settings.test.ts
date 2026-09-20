@@ -23,11 +23,12 @@ describe('settings', () => {
     expect(resolveSize(s)).toEqual({ width: CUSTOM_SIZE_MAX, height: 8 })
   })
 
-  it('defaults to the daily maze with breadcrumbs off', () => {
+  it('defaults to the daily maze with breadcrumbs on', () => {
     expect(DEFAULT_SETTINGS.seedMode).toBe('daily')
-    expect(DEFAULT_SETTINGS.breadcrumbs).toBe(false)
-    expect(sanitizeSettings({ breadcrumbs: true }).breadcrumbs).toBe(true)
-    expect(sanitizeSettings({ breadcrumbs: 'yes' }).breadcrumbs).toBe(false)
+    expect(DEFAULT_SETTINGS.breadcrumbs).toBe(true)
+    // A saved preference still wins, so anyone who turned them off keeps them off.
+    expect(sanitizeSettings({ breadcrumbs: false }).breadcrumbs).toBe(false)
+    expect(sanitizeSettings({ breadcrumbs: 'yes' }).breadcrumbs).toBe(true)
   })
 
   it('keys custom times by the difficulty-affecting modifiers only', () => {

@@ -6,6 +6,7 @@ import {
   dailyPoints,
   dailyShareText,
   finishDailyResult,
+  PLAY_URL,
   sanitizeDailyResult,
   startDailyResult
 } from './dailyScore'
@@ -67,9 +68,11 @@ describe('daily score', () => {
 
   it('builds shareable text', () => {
     const result = { ...startDailyResult(SEED, 'a1'), status: 'solved' as const, timeMs: 45_300, moves: 120 }
-    expect(dailyShareText(result, 'solved')).toBe('Amaze Daily 2026-09-17\n⏱️ 0:45.3 · 👣 120 moves\n🏆 5436 pts')
+    expect(dailyShareText(result, 'solved')).toBe(
+      `Amaze Daily 2026-09-17\n⏱️ 0:45.3 · 👣 120 moves\n🏆 5436 pts\n${PLAY_URL}`
+    )
     expect(dailyShareText(startDailyResult(SEED, 'a1'), 'did-not-finish')).toBe(
-      'Amaze Daily 2026-09-17\n❌ Did not finish'
+      `Amaze Daily 2026-09-17\n❌ Did not finish\n${PLAY_URL}`
     )
     expect(dailyShareText({ ...result, seed: 'DOOZIE-2026-09-17' }, 'solved')).toMatch(
       /^Amaze Daily Doozie 2026-09-17\n/

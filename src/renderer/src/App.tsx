@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_APPEARANCE, resolvePalette, type Appearance } from '../../core/appearance'
-import { dailyKind, dailySeed, dailySettings, type DailyKind } from '../../core/daily'
+import { dailyKind, dailySeed, dailySettings, type DailyKind, type GameMode } from '../../core/daily'
 import {
   dailyOutcome,
   finishDailyResult,
@@ -18,6 +18,7 @@ import { ConfirmLeaveDailyDialog, DailyScorePanel, DoozieUnlocked, StartOverlay 
 import { FinishDialog } from './components/FinishDialog'
 import { ConfirmGiveUpDialog, GaveUpDialog } from './components/GiveUpDialogs'
 import { Hud } from './components/Hud'
+import { MysterySpinner } from './components/MysterySpinner'
 import { RecordsDialog } from './components/RecordsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { TouchHint } from './components/TouchHint'
@@ -25,7 +26,8 @@ import { GameCanvas } from './game/GameCanvas'
 import { applyPalette, useIsTouch, usePrefersDark } from './theme'
 
 type DialogState =
-  | { kind: 'settings' }
+  /** `custom` means it was opened by picking Custom, so Start is the obvious action. */
+  | { kind: 'settings'; custom?: boolean }
   | { kind: 'appearance' }
   | { kind: 'records' }
   | { kind: 'confirm-give-up' }
@@ -172,6 +174,8 @@ function Game({ boot }: { boot: Boot }) {
 
   /** Which daily maze N / New maze replays while in daily mode. */
   const [kind, setKind] = useState<DailyKind>('daily')
+  /** Which of the four modes this run belongs to, for the header's mode buttons. */
+  const mode: GameMode = session.settings.seedMode === 'daily' ? dailyKind(session.seed) : 'custom'
   const newMaze = useCallback((next: GameSettings = settings, nextKind: DailyKind = kind) => {
     setSettings(next)
     setKind(nextKind)
@@ -186,6 +190,20 @@ function Game({ boot }: { boot: Boot }) {
   const playDaily = (nextKind: DailyKind): void => {
     if (nextKind === 'doozie' && !doozieUnlocked) return
     guardLeave(() => newMaze({ ...settings, seedMode: 'daily' }, nextKind))
+  }
+
+  /**
+   * Switching modes from the header or the menu. Custom is the odd one out: it
+   * has nothing to switch to until the player has chosen a size and an
+   * algorithm, so it opens its settings rather than starting a maze.
+   */
+  const playMode = (next: GameMode): void => {
+    if (next === mode && next !== 'custom') return
+    if (next === 'custom') {
+      guardLeave(() => setDialog({ kind: 'settings', custom: true }))
+      return
+    }
+    playDaily(next)
   }
   const isDaily = session.settings.seedMode === 'daily'
   const justSolvedDaily = isDaily && dailyKind(session.seed) === 'daily' && session.solved
@@ -230,6 +248,8 @@ function Game({ boot }: { boot: Boot }) {
     if (dialog) return
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+      // A box is spinning: the run is frozen, and so is everything that acts on it.
+      if (session.busy) return
       switch (e.code) {
         case 'Enter':
         case 'Space':
@@ -247,6 +267,14 @@ function Game({ boot }: { boot: Boot }) {
           return requestGiveUp()
         case 'KeyT':
           return toggleBreadcrumbs()
+        case 'KeyX':
+          // Arms a wall-break charge; the next move into a wall spends it.
+          if (session.isArcade) session.armBreak()
+          return
+        case 'KeyZ':
+          // Same, for a jump: over the wall rather than through it.
+          if (session.isArcade) session.armJump()
+          return
         case 'KeyF':
           return setFitRequest((n) => n + 1)
         case 'KeyB':
@@ -267,11 +295,12 @@ function Game({ boot }: { boot: Boot }) {
     <div className="app">
       <Hud
         session={session}
+        mode={mode}
+        onPlayMode={playMode}
         breadcrumbs={settings.breadcrumbs}
         onToggleBreadcrumbs={toggleBreadcrumbs}
         daily={daily}
         doozieUnlocked={doozieUnlocked}
-        onPlayDaily={playDaily}
         onGiveUp={requestGiveUp}
         onNewMaze={() => guardLeave(() => newMaze())}
         onRetry={() => guardLeave(retry)}
@@ -285,7 +314,7 @@ function Game({ boot }: { boot: Boot }) {
       <main className="stage">
         <GameCanvas
           session={session}
-          inputEnabled={dialog === null}
+          inputEnabled={dialog === null && !session.busy}
           fitRequest={fitRequest}
           breadcrumbs={settings.breadcrumbs}
           appearance={appearance}
@@ -297,15 +326,24 @@ function Game({ boot }: { boot: Boot }) {
             onUseDpad={() => setAppearance((a) => ({ ...a, touchHintSeen: true, touchDpad: true }))}
           />
         )}
+        {session.mystery && <MysterySpinner spin={session.mystery} />}
+        {/* A maze that has gone black needs to say why, or it reads as a bug. */}
+        {session.blindUntil !== null && (
+          <div className="blind-banner" role="status">
+            <span aria-hidden="true">🌑</span> Lights out
+          </div>
+        )}
         {session.awaitingStart && (
           <StartOverlay
             session={session}
             existing={daily}
             onStart={start}
+            // The modes are their own navigation now, so the only switch worth
+            // offering here is the Doozie the player has just unlocked.
             onSwitch={
-              dailyKind(session.seed) === 'doozie'
+              mode === 'doozie'
                 ? () => playDaily('daily')
-                : doozieUnlocked
+                : mode === 'daily' && doozieUnlocked
                   ? () => playDaily('doozie')
                   : undefined
             }
@@ -317,11 +355,13 @@ function Game({ boot }: { boot: Boot }) {
           <>
             Drag to move · Tap to backtrack · Two fingers to pan · Pinch to zoom
             {session.settings.hints > 0 && ' · Hint in the header'}
+            {session.isArcade && ' · Keys, breaks and jumps in the menu'}
           </>
         ) : (
           <>
             Arrows / WASD / HJKL move · Click to backtrack · Drag from player to trace · Scroll zoom · F fit
-            {session.settings.hints > 0 && ' · E hint'} · T breadcrumbs · G give up · N new · R retry
+            {session.settings.hints > 0 && ' · E hint'}
+            {session.isArcade && ' · X break · Z jump'} · T breadcrumbs · G give up · N new · R retry
           </>
         )}
       </footer>
@@ -331,6 +371,7 @@ function Game({ boot }: { boot: Boot }) {
           settings={settings}
           hasSavedDefaults={hasSavedDefaults}
           onStart={(next) => guardLeave(() => newMaze(next, 'daily'))}
+          autoStart={dialog.custom === true}
           onSaveDefaults={async (s) => {
             await api.saveDefaults(s)
             setHasSavedDefaults(true)

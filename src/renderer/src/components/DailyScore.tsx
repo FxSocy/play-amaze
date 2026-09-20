@@ -76,17 +76,21 @@ interface OverlayProps {
 
 export function StartOverlay({ session, existing, onStart, onSwitch }: OverlayProps) {
   const scored = existing?.outcome === 'solved' && existing.result.timeMs !== null && existing.result.moves !== null
-  const doozie = dailyKind(session.seed) === 'doozie'
+  const kind = dailyKind(session.seed)
+  const doozie = kind === 'doozie'
+  const arcade = kind === 'arcade'
   return (
     <div className="start-overlay">
-      <div className={doozie ? 'start-card doozie' : 'start-card'}>
+      <div className={`start-card${doozie ? ' doozie' : ''}${arcade ? ' arcade' : ''}`}>
         <h2>
           {doozie ? '🔥 ' : ''}
+          {arcade ? '🌀 ' : ''}
           {dailyLabel(session.seed)}
           {existing ? ' · practice' : ''}
         </h2>
         <span className="help">{describeModifiers(session.settings, session.seed)}</span>
         {doozie && <p className="help">The exit flashes for three seconds when you start, so you know which way to head.</p>}
+        {arcade && session.features && <ArcadeRules session={session} />}
         {existing ? (
           <p className="help">
             You've already played today
@@ -112,6 +116,36 @@ export function StartOverlay({ session, existing, onStart, onSwitch }: OverlayPr
         )}
       </div>
     </div>
+  )
+}
+
+/** What the maze has on it, explained once, before the clock starts. */
+function ArcadeRules({ session }: { session: GameSession }) {
+  const features = session.features!
+  return (
+    <ul className="arcade-rules help">
+      <li>
+        <strong>Portals</strong> — step on one of a matching pair and come out at the other.
+      </li>
+      {features.gateCells.length > 0 && (
+        <li>
+          <strong>Keys and gates</strong> — pick up a key, spend it to open a barred gate. Every key is
+          findable before the gate that needs it.
+        </li>
+      )}
+      <li>
+        <strong>One-way doors</strong> — a chevron marks a passage you can only take one way.
+      </li>
+      {features.boxCells.length > 0 && (
+        <li>
+          <strong>
+            {features.boxCells.length} ? box{features.boxCells.length === 1 ? '' : 'es'}
+          </strong>{' '}
+          — at dead ends, so reaching one is a detour. Opening it spins for one of four: a wall-break
+          charge, a jump over one wall — or the lights going out, or a trip back to the start.
+        </li>
+      )}
+    </ul>
   )
 }
 

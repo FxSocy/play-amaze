@@ -220,6 +220,10 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
     let frame = 0
     const tick = (): void => {
       const now = performance.now()
+      // Both of these expire on their own clock, so the frame loop drives them:
+      // a spin always ends, even if React is busy elsewhere.
+      session.mysteryRemaining(now)
+      session.blindRemaining(now)
       stepMovement(now)
 
       const t = Math.min(1, (now - st.anim.start) / st.anim.duration)
@@ -253,9 +257,19 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
     }
 
     const stepMovement = (now: number): void => {
-      if (now - st.anim.start < st.anim.duration || session.finished) return
+      if (now - st.anim.start < st.anim.duration || session.finished || session.busy) return
       const moved = (duration = STEP_MS): void => {
-        st.anim = { from: st.anim.to, to: session.player, start: now, duration }
+        const from = st.anim.to
+        // Portals and a trip back to the start both land the player somewhere
+        // that is not next door.
+
+        const maze = session.maze
+        const steps =
+          Math.abs(cellX(maze, from) - cellX(maze, session.player)) +
+          Math.abs(cellY(maze, from) - cellY(maze, session.player))
+        // Coming out of a portal is not a walk: tweening across the maze would
+        // look like the player sliding through every wall on the way.
+        st.anim = { from, to: session.player, start: now, duration: steps > 1 ? 1 : duration }
       }
       st.anim.from = st.anim.to = session.player
 

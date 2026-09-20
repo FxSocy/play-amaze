@@ -66,15 +66,20 @@ export function dailyPoints(timeMs: number, moves: number): number {
   return Math.floor((Math.floor(timeMs / 100) * moves) / 10)
 }
 
+/** Where a shared score sends everyone else to play the same maze. */
+export const PLAY_URL = 'https://fxsocy.github.io/play-amaze/'
+
 export function dailyShareText(result: DailyResult, outcome: DailyOutcome): string {
   const title = `Amaze ${dailyLabel(result.seed)} ${dailyDate(result.seed)}`
+  // The link goes last, on its own line, so chat apps make it a clickable preview.
   if (outcome !== 'solved' || result.timeMs === null || result.moves === null) {
-    return `${title}\n❌ Did not finish`
+    return [title, '❌ Did not finish', PLAY_URL].join('\n')
   }
   return [
     title,
     `⏱️ ${formatTime(result.timeMs)} · 👣 ${result.moves} moves`,
-    `🏆 ${dailyPoints(result.timeMs, result.moves)} pts`
+    `🏆 ${dailyPoints(result.timeMs, result.moves)} pts`,
+    PLAY_URL
   ].join('\n')
 }
 

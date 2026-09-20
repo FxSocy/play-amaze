@@ -8,7 +8,13 @@ same maze for everyone, seeded from the date, rolling over at your local midnigh
 maze that unlocks once you've solved the day's standard one. Its fog hides the exit, so the Doozie
 flashes the exit for three seconds when you start, to point you in roughly the right direction.
 Only your first attempt each day is scored (time × moves, lower is better), and the score copies to
-your clipboard as shareable text.
+your clipboard as shareable text, with a link so whoever you send it to can play the same maze.
+
+There are three dailies and a mode of your own: the **Daily**, the **Doozie** (hard mode, unlocked by
+solving the Daily), the **Arcade** — a smaller maze strewn with portals, keys, locked gates, one-way
+doors and ? boxes that spin for a prize or a punishment — and **Custom**, your own size, algorithm, fog, hints — and Arcade features, if you want portals in
+a maze of your own.
+Pick one in the header; everything else is behind **Menu**.
 
 A daily maze stays hidden until you press **Start** (or Enter / Space), which starts the clock.
 Arrow keys, WASD or vim keys (HJKL) move. Drag from the dot to trace a route; clicking walks back
@@ -18,8 +24,7 @@ retries the same one, `B` shows best times, `P` opens Appearance and `Esc` opens
 
 On a phone or tablet: drag anywhere to steer, tap a cell to walk back over ground you've covered,
 use two fingers to pan and pinch to zoom. Prefer buttons? Turn on the direction pad from the menu or
-from Appearance. You can add it to your home screen. Mobile support is new — if something feels
-wrong on your device, that's worth knowing about.
+from Appearance. You can add it to your home screen.
 
 Progress (best times, daily results, theme) is stored in your browser's local storage, so it stays
 on the device you play on and a private window starts fresh.

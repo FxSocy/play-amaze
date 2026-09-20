@@ -50,6 +50,8 @@ export interface Palette {
   start: string
   exit: string
   hint: string
+  /** Wall-break charges lying on an Arcade maze. */
+  charge: string
   route: string
   trail: string
   solution: string
@@ -81,6 +83,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#dde6fd',
       exit: '#2fbf7a',
       hint: '#f0a326',
+      charge: '#c026d3',
       route: 'rgba(59, 110, 245, 0.35)',
       trail: 'rgba(139, 92, 246, 0.35)',
       solution: '#e5484d'
@@ -111,6 +114,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#28324a',
       exit: '#35c47f',
       hint: '#f5b544',
+      charge: '#e879f9',
       route: 'rgba(109, 149, 255, 0.4)',
       trail: 'rgba(167, 139, 250, 0.4)',
       solution: '#ff6b6f'
@@ -141,6 +145,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#2f334d',
       exit: '#9ece6a',
       hint: '#e0af68',
+      charge: '#bb9af7',
       route: 'rgba(122, 162, 247, 0.4)',
       trail: 'rgba(187, 154, 247, 0.4)',
       solution: '#f7768e'
@@ -171,6 +176,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#dfe9d6',
       exit: '#5f9e55',
       hint: '#d4a23f',
+      charge: '#a15a8f',
       route: 'rgba(95, 139, 90, 0.35)',
       trail: 'rgba(168, 87, 58, 0.3)',
       solution: '#c2564b'
@@ -201,6 +207,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#3a2b22',
       exit: '#9bc46b',
       hint: '#ffd166',
+      charge: '#e05fc0',
       route: 'rgba(255, 138, 76, 0.4)',
       trail: 'rgba(255, 179, 71, 0.35)',
       solution: '#ff5c5c'
@@ -231,6 +238,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#f6dbe6',
       exit: '#3fae80',
       hint: '#f0a326',
+      charge: '#2f9e9e',
       route: 'rgba(214, 88, 138, 0.35)',
       trail: 'rgba(145, 100, 200, 0.3)',
       solution: '#d0444f'
@@ -261,6 +269,7 @@ export const THEMES: Record<ThemeId, { label: string; palette: Palette }> = {
       start: '#123a1b',
       exit: '#39c0ff',
       hint: '#ffb000',
+      charge: '#d65fff',
       route: 'rgba(57, 255, 106, 0.35)',
       trail: 'rgba(255, 176, 0, 0.35)',
       solution: '#ff5f56'
