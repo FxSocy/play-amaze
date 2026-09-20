@@ -10,6 +10,7 @@ import {
   portalExit,
   withoutKeys,
   MYSTERY_IS_GOOD,
+  MYSTERY_OUTCOMES,
   type MazeFeatures,
   type MysteryOutcome
 } from './arcade'
@@ -286,8 +287,14 @@ describe('mystery boxes', () => {
   it('deals outcomes from a bag, so no maze is all punishment', () => {
     for (const seed of SEEDS) {
       const outcomes = arcadeMaze(seed).features.boxOutcomes
-      // Three boxes dealt from a shuffled four: always three different results.
-      expect(new Set(outcomes).size, seed).toBe(outcomes.length)
+      // Dealt from shuffled bags of all four outcomes, so the counts can never
+      // be further apart than one whole bag's worth: with five boxes, one
+      // outcome comes up twice and the other three once each.
+      const times = (outcome: MysteryOutcome): number => outcomes.filter((o) => o === outcome).length
+      for (const outcome of MYSTERY_OUTCOMES) {
+        expect(times(outcome), `${outcome} in ${seed}`).toBeGreaterThanOrEqual(Math.floor(outcomes.length / 4))
+        expect(times(outcome), `${outcome} in ${seed}`).toBeLessThanOrEqual(Math.ceil(outcomes.length / 4))
+      }
       expect(outcomes.some((o) => MYSTERY_IS_GOOD[o]), `nothing good in ${seed}`).toBe(true)
     }
   })
