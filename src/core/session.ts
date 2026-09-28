@@ -1,6 +1,7 @@
 import {
   arcadeSpecFor,
   canLeave,
+  dealMysteryOutcomes,
   generateFeatures,
   isClosedGate,
   optimalFeatureMoves,
@@ -22,6 +23,7 @@ import {
   type Direction,
   type Maze
 } from './maze'
+import { createRng, randomSeed, type Rng } from './rng'
 import { FOG_LEVELS, resolveSize, type GameSettings } from './settings'
 import { bfs, findPath } from './solver'
 
@@ -92,6 +94,11 @@ export class GameSession {
   readonly visited: Uint8Array
   /** Portals, keys, gates and one-way doors, or null on a plain maze. */
   readonly features: MazeFeatures | null
+  /**
+   * What each mystery box holds, indexed like `features.boxCells`. Dealt fresh
+   * for every run, so the same seed played again is a new gamble.
+   */
+  readonly boxOutcomes: MysteryOutcome[]
 
   player: number
   moves = 0
@@ -142,7 +149,11 @@ export class GameSession {
   private visibleCells: number[] = []
   private readonly listeners = new Set<() => void>()
 
-  constructor(settings: GameSettings, seed: string) {
+  /**
+   * `luck` deals the mystery box outcomes. It defaults to a fresh random source
+   * so every run differs; tests pass a seeded one to pin the outcomes down.
+   */
+  constructor(settings: GameSettings, seed: string, luck: Rng = createRng(randomSeed())) {
     this.settings = settings
     this.seed = seed
     this.maze = generateMaze({ ...resolveSize(settings), algorithm: settings.algorithm, seed })
@@ -152,6 +163,7 @@ export class GameSession {
         ? arcadeSpec(seed)
         : arcadeSpecFor(settings.arcade, this.maze.width, this.maze.height)
     this.features = spec ? generateFeatures(this.maze, `${seed}:arcade`, spec) : null
+    this.boxOutcomes = dealMysteryOutcomes(this.features?.boxCells.length ?? 0, luck)
     this.optimalMoves = this.features
       ? optimalFeatureMoves(this.maze, this.features)
       : (findPath(this.maze, this.maze.start, this.maze.end)?.length ?? 1) - 1
@@ -420,8 +432,7 @@ export class GameSession {
   }
 
   /**
-   * Opening a mystery box. The outcome was decided by the seed when the maze
-   * was made; this starts the reel that shows it, stops the clock and freezes
+   * Opening a mystery box. The outcome was dealt when the run began; this starts the reel that shows it, stops the clock and freezes
    * the run until `mysteryRemaining` runs out.
    */
   private openBox(cell: number, now: number): void {
@@ -429,7 +440,7 @@ export class GameSession {
     const index = features.boxIndex[cell]
     if (index < 0 || (this.boxesOpened & (1 << index)) !== 0) return
     this.boxesOpened |= 1 << index
-    this.mystery = { cell, outcome: features.boxOutcomes[index], endsAt: now + MYSTERY_SPIN_MS }
+    this.mystery = { cell, outcome: this.boxOutcomes[index], endsAt: now + MYSTERY_SPIN_MS }
     this.breakArmed = false
     this.jumpArmed = false
     this.pauseClock(now)

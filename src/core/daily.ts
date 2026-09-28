@@ -68,23 +68,16 @@ export const DAILY_STANDARDS: Record<DailyKind, DailyStandard> = {
     height: 40,
     fog: 'light'
   },
-  // Still smaller than the standard daily on purpose: the features, not the
-  // distance, are what there is to think about. But a first pass at two of
-  // everything played as a plain maze with decorations, so the base standard is
-  // denser than that — three gates to plan keys around, three portal pairs to
-  // learn, and enough one-way doors that the run home has to be thought about.
-  // Fog stays off: hiding the maze is the Doozie's job, and a portal you cannot
-  // see is a coin flip rather than a decision.
+  // Smaller than the standard daily on purpose: the features, not the distance,
+  // are what there is to think about.
   arcade: {
     label: 'Daily Arcade',
     prefix: 'ARCADE-',
     algorithms: ['backtracker', 'prims', 'kruskal', 'wilsons'],
-    width: 28,
-    height: 18,
+    width: 24,
+    height: 16,
     fog: 'off',
-    // Five boxes rather than four: a bag holds four outcomes, so four boxes
-    // would deal exactly one of each every single day.
-    arcade: { portalPairs: 3, gates: 3, oneWays: 4, boxes: 5 }
+    arcade: { portalPairs: 2, gates: 2, oneWays: 2, boxes: 3 }
   }
 }
 export const DAILY_WIDTH = DAILY_STANDARDS.daily.width

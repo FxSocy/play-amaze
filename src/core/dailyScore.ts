@@ -77,7 +77,7 @@ export function dailyShareText(result: DailyResult, outcome: DailyOutcome): stri
   }
   return [
     title,
-    `⏱️ ${formatTime(result.timeMs)} · 👣 ${result.moves} moves`,
+    `⏱️ ${formatTime(result.timeMs)} · 🧭 ${result.moves} moves`,
     `🏆 ${dailyPoints(result.timeMs, result.moves)} pts`,
     PLAY_URL
   ].join('\n')

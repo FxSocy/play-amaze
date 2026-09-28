@@ -10,7 +10,6 @@ import {
   portalExit,
   withoutKeys,
   MYSTERY_IS_GOOD,
-  MYSTERY_OUTCOMES,
   type MazeFeatures,
   type MysteryOutcome
 } from './arcade'
@@ -262,7 +261,7 @@ describe('mystery boxes', () => {
   function openBox(outcome: MysteryOutcome): { session: GameSession; cell: number } {
     for (const seed of SEEDS) {
       const session = arcadeSession(seed)
-      const index = session.features!.boxOutcomes.indexOf(outcome)
+      const index = session.boxOutcomes.indexOf(outcome)
       if (index < 0) continue
       session.begin(0)
       const cell = session.features!.boxCells[index]
@@ -286,17 +285,19 @@ describe('mystery boxes', () => {
 
   it('deals outcomes from a bag, so no maze is all punishment', () => {
     for (const seed of SEEDS) {
-      const outcomes = arcadeMaze(seed).features.boxOutcomes
-      // Dealt from shuffled bags of all four outcomes, so the counts can never
-      // be further apart than one whole bag's worth: with five boxes, one
-      // outcome comes up twice and the other three once each.
-      const times = (outcome: MysteryOutcome): number => outcomes.filter((o) => o === outcome).length
-      for (const outcome of MYSTERY_OUTCOMES) {
-        expect(times(outcome), `${outcome} in ${seed}`).toBeGreaterThanOrEqual(Math.floor(outcomes.length / 4))
-        expect(times(outcome), `${outcome} in ${seed}`).toBeLessThanOrEqual(Math.ceil(outcomes.length / 4))
-      }
+      const outcomes = arcadeSession(seed).boxOutcomes
+      // Three boxes dealt from a shuffled four: always three different results.
+      expect(new Set(outcomes).size, seed).toBe(outcomes.length)
       expect(outcomes.some((o) => MYSTERY_IS_GOOD[o]), `nothing good in ${seed}`).toBe(true)
     }
+  })
+
+  it('deals fresh outcomes each run of the same seed, in the same places', () => {
+    const seed = SEEDS[0]
+    const runs = Array.from({ length: 20 }, () => arcadeSession(seed))
+    for (const run of runs) expect(run.features!.boxCells).toEqual(runs[0].features!.boxCells)
+    const deals = new Set(runs.map((run) => run.boxOutcomes.join()))
+    expect(deals.size, 'twenty runs all dealt the same boxes').toBeGreaterThan(1)
   })
 
   it('never routes the player through a box', () => {

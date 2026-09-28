@@ -108,8 +108,6 @@ export interface MazeFeatures {
   gateCells: number[]
   /** Mystery boxes, always at dead ends so reaching one is a detour you choose. */
   boxCells: number[]
-  /** What each box in `boxCells` holds, decided by the seed. */
-  boxOutcomes: MysteryOutcome[]
   portalPairs: [number, number][]
 }
 
@@ -166,7 +164,6 @@ export function emptyFeatures(maze: Maze): MazeFeatures {
     keyCells: [],
     gateCells: [],
     boxCells: [],
-    boxOutcomes: [],
     portalPairs: []
   }
 }
@@ -407,10 +404,9 @@ export function generateFeatures(maze: Maze, seed: string, spec: ArcadeSpec): Ma
  * is no decision at all; at the end of a branch, taking the gamble costs you
  * the walk there and back, and that is the whole point of it.
  *
- * Outcomes are dealt from a shuffled bag of all four rather than rolled one at
- * a time, so a maze can't hand one player three trips back to the start and
- * another three charges. Like everything else here it comes from the seed: the
- * reel in front of the player is theatre over a result already decided.
+ * Where the boxes sit comes from the seed, like everything else here. What
+ * they hold does not: that is dealt per run by `dealMysteryOutcomes`, so
+ * replaying a seed is the same maze with a fresh gamble in every box.
  *
  * Boxes are never needed to finish, and the route planner knows nothing about
  * them — a planned route never enters a dead end, so it never walks into one.
@@ -424,14 +420,29 @@ function placeBoxes(maze: Maze, features: MazeFeatures, taken: Uint8Array, count
   }
   rng.shuffle(deadEnds)
 
-  let bag: MysteryOutcome[] = []
   for (const cell of deadEnds.slice(0, count)) {
-    if (bag.length === 0) bag = rng.shuffle([...MYSTERY_OUTCOMES])
     taken[cell] = 1
     features.boxIndex[cell] = features.boxCells.length
     features.boxCells.push(cell)
-    features.boxOutcomes.push(bag.pop()!)
   }
+}
+
+/**
+ * What each of `count` boxes holds, for one run.
+ *
+ * Outcomes are dealt from a shuffled bag of all four rather than rolled one at
+ * a time, so a maze can't hand one player three trips back to the start and
+ * another three charges. The reel in front of the player is theatre over a
+ * result dealt when the run began.
+ */
+export function dealMysteryOutcomes(count: number, rng: Rng): MysteryOutcome[] {
+  const outcomes: MysteryOutcome[] = []
+  let bag: MysteryOutcome[] = []
+  for (let i = 0; i < count; i++) {
+    if (bag.length === 0) bag = rng.shuffle([...MYSTERY_OUTCOMES])
+    outcomes.push(bag.pop()!)
+  }
+  return outcomes
 }
 
 /**
