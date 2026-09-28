@@ -7,7 +7,11 @@ export interface Scene {
   session: GameSession
   camera: Camera
   view: Viewport
-  /** Player position in cell units (fractional while animating). */
+  /**
+   * Player position in cell units of the whole grid (fractional while
+   * animating) — in a Portal game, counted from maze 1's left edge, like every
+   * other cell the scene draws.
+   */
   playerX: number
   playerY: number
   /** Cells still queued for mouse-driven movement. */

@@ -1,6 +1,6 @@
 {
   "name": "play-amaze",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Amaze: a pseudorandom maze game, built for the web.",
   "engines": {

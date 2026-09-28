@@ -301,7 +301,8 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
         session,
         camera: { ...st.camera, y: st.camera.y + band() },
         view: st.view,
-        playerX,
+        // The scene is in cells of the whole grid, not of the maze on screen.
+        playerX: playerX + st.pane * dims().width,
         playerY,
         route: st.route,
         pane: st.pane,
