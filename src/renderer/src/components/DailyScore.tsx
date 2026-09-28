@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { Palette } from '../../../core/appearance'
 import { dailyKind, dailyLabel } from '../../../core/daily'
 import { dailyPoints, dailyShareText, type DailyOutcome, type DailyResult } from '../../../core/dailyScore'
 import { formatTime } from '../../../core/records'
@@ -6,6 +7,7 @@ import type { GameSession } from '../../../core/session'
 import { describeModifiers } from '../../../core/settings'
 import { copyText } from '../clipboard'
 import { Dialog } from './Dialog'
+import { PortalGuide } from './PortalGuide'
 
 export function CopyScoreButton({
   result,
@@ -72,80 +74,59 @@ interface OverlayProps {
   onStart: () => void
   /** Switches to the other daily maze, when it's available. */
   onSwitch?: () => void
+  /** The theme's colours, for the Portal guide's legend. */
+  palette: Palette
 }
 
-export function StartOverlay({ session, existing, onStart, onSwitch }: OverlayProps) {
+export function StartOverlay({ session, existing, onStart, onSwitch, palette }: OverlayProps) {
   const scored = existing?.outcome === 'solved' && existing.result.timeMs !== null && existing.result.moves !== null
   const kind = dailyKind(session.seed)
   const doozie = kind === 'doozie'
-  const arcade = kind === 'arcade'
+  const portal = kind === 'portal' && session.isPortal
   return (
     <div className="start-overlay">
-      <div className={`start-card${doozie ? ' doozie' : ''}${arcade ? ' arcade' : ''}`}>
+      <div className={`start-card${doozie ? ' doozie' : ''}${portal ? ' portal' : ''}`}>
         <h2>
           {doozie ? '🔥 ' : ''}
-          {arcade ? '🌀 ' : ''}
+          {portal ? '🌀 ' : ''}
           {dailyLabel(session.seed)}
           {existing ? ' · practice' : ''}
         </h2>
         <span className="help">{describeModifiers(session.settings, session.seed)}</span>
         {doozie && <p className="help">The exit flashes for three seconds when you start, so you know which way to head.</p>}
-        {arcade && session.features && <ArcadeRules session={session} />}
-        {existing ? (
-          <p className="help">
-            You've already played today
-            {scored
-              ? ` (${dailyPoints(existing.result.timeMs!, existing.result.moves!)} pts)`
-              : ' (did not finish)'}
-            . Practice runs won't change your score.
-          </p>
-        ) : (
-          <p className="help">
-            The maze is revealed and the timer starts the moment you press Start. Only this first attempt is
-            scored. Leaving the run or giving up counts as did not finish.
-          </p>
+        {portal && (
+          <>
+            <h3 className="guide-heading">How Portal works</h3>
+            <PortalGuide session={session} palette={palette} />
+          </>
         )}
-        <button className="btn btn-primary start-button" onClick={onStart} autoFocus>
-          {existing ? 'Start practice' : 'Start'}
-        </button>
-        <span className="help">Enter or Space</span>
-        {onSwitch && (
-          <button className="btn btn-ghost" onClick={onSwitch}>
-            {doozie ? '← Back to the daily maze' : '🔥 Play the Daily Doozie'}
+        <div className="start-actions">
+          {existing ? (
+            <p className="help">
+              You've already played today
+              {scored
+                ? ` (${dailyPoints(existing.result.timeMs!, existing.result.moves!)} pts)`
+                : ' (did not finish)'}
+              . Practice runs won't change your score.
+            </p>
+          ) : (
+            <p className="help">
+              The maze is revealed and the timer starts the moment you press Start. Only this first attempt is
+              scored. Leaving the run or giving up counts as did not finish.
+            </p>
+          )}
+          <button className="btn btn-primary start-button" onClick={onStart} autoFocus>
+            {existing ? 'Start practice' : 'Start'}
           </button>
-        )}
+          <span className="help">Enter or Space</span>
+          {onSwitch && (
+            <button className="btn btn-ghost" onClick={onSwitch}>
+              {doozie ? '← Back to the daily maze' : '🔥 Play the Daily Doozie'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
-  )
-}
-
-/** What the maze has on it, explained once, before the clock starts. */
-function ArcadeRules({ session }: { session: GameSession }) {
-  const features = session.features!
-  return (
-    <ul className="arcade-rules help">
-      <li>
-        <strong>Portals</strong> — step on one of a matching pair and come out at the other.
-      </li>
-      {features.gateCells.length > 0 && (
-        <li>
-          <strong>Keys and gates</strong> — pick up a key, spend it to open a barred gate. Every key is
-          findable before the gate that needs it.
-        </li>
-      )}
-      <li>
-        <strong>One-way doors</strong> — a chevron marks a passage you can only take one way.
-      </li>
-      {features.boxCells.length > 0 && (
-        <li>
-          <strong>
-            {features.boxCells.length} ? box{features.boxCells.length === 1 ? '' : 'es'}
-          </strong>{' '}
-          — at dead ends, so reaching one is a detour. Opening it spins for one of four: a wall-break
-          charge, a jump over one wall — or the lights going out, or a trip back to the start.
-        </li>
-      )}
-    </ul>
   )
 }
 

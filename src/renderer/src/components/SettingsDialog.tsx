@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { ARCADE_LABELS, ARCADE_LEVELS, arcadeSpecFor } from '../../../core/arcade'
 import { ALGORITHM_IDS, GENERATORS } from '../../../core/generators'
 import {
   CUSTOM_SIZE_MAX,
@@ -7,6 +6,8 @@ import {
   FOG_LEVEL_IDS,
   FOG_LEVELS,
   HINT_OPTIONS,
+  PORTAL_OPTIONS,
+  portalLayoutFor,
   resolveSize,
   sanitizeSettings,
   SIZE_PRESET_IDS,
@@ -68,7 +69,7 @@ export function SettingsDialog({
   const [draft, setDraft] = useState(settings)
   const [status, setStatus] = useState<string | null>(null)
   const size = resolveSize(draft)
-  const spec = arcadeSpecFor(draft.arcade, size.width, size.height)
+  const layout = portalLayoutFor(draft)
   const update = (patch: Partial<GameSettings>): void => {
     setDraft((d) => ({ ...d, ...patch }))
     setStatus(null)
@@ -101,37 +102,45 @@ export function SettingsDialog({
 
       <div className="field">
         <label>Size</label>
-        <Segmented
-          value={draft.sizePreset}
-          options={SIZE_PRESET_IDS}
-          label={(id) =>
-            id === 'custom' ? 'Custom' : `${SIZE_PRESETS[id].label} ${SIZE_PRESETS[id].width}×${SIZE_PRESETS[id].height}`
-          }
-          onChange={(sizePreset) => update({ sizePreset })}
-        />
-        {draft.sizePreset === 'custom' && (
-          <div className="size-inputs">
-            <input
-              type="number"
-              min={CUSTOM_SIZE_MIN}
-              max={CUSTOM_SIZE_MAX}
-              value={draft.customWidth}
-              onChange={(e) => update({ customWidth: e.target.valueAsNumber })}
-              aria-label="Width"
+        {layout ? (
+          <p className="help">
+            Set by Portal: {layout.panes} mazes of {size.width}×{size.height} each. Turn Portal off to choose a size.
+          </p>
+        ) : (
+          <>
+            <Segmented
+              value={draft.sizePreset}
+              options={SIZE_PRESET_IDS}
+              label={(id) =>
+                id === 'custom' ? 'Custom' : `${SIZE_PRESETS[id].label} ${SIZE_PRESETS[id].width}×${SIZE_PRESETS[id].height}`
+              }
+              onChange={(sizePreset) => update({ sizePreset })}
             />
-            <span>×</span>
-            <input
-              type="number"
-              min={CUSTOM_SIZE_MIN}
-              max={CUSTOM_SIZE_MAX}
-              value={draft.customHeight}
-              onChange={(e) => update({ customHeight: e.target.valueAsNumber })}
-              aria-label="Height"
-            />
-            <span className="help">
-              {CUSTOM_SIZE_MIN}–{CUSTOM_SIZE_MAX} cells
-            </span>
-          </div>
+            {draft.sizePreset === 'custom' && (
+              <div className="size-inputs">
+                <input
+                  type="number"
+                  min={CUSTOM_SIZE_MIN}
+                  max={CUSTOM_SIZE_MAX}
+                  value={draft.customWidth}
+                  onChange={(e) => update({ customWidth: e.target.valueAsNumber })}
+                  aria-label="Width"
+                />
+                <span>×</span>
+                <input
+                  type="number"
+                  min={CUSTOM_SIZE_MIN}
+                  max={CUSTOM_SIZE_MAX}
+                  value={draft.customHeight}
+                  onChange={(e) => update({ customHeight: e.target.valueAsNumber })}
+                  aria-label="Height"
+                />
+                <span className="help">
+                  {CUSTOM_SIZE_MIN}–{CUSTOM_SIZE_MAX} cells
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -156,16 +165,16 @@ export function SettingsDialog({
       </div>
 
       <div className="field">
-        <label>Arcade features</label>
+        <label>Portal</label>
         <Segmented
-          value={draft.arcade}
-          options={ARCADE_LEVELS}
-          label={(level) => ARCADE_LABELS[level]}
-          onChange={(arcade) => update({ arcade })}
+          value={draft.portal}
+          options={PORTAL_OPTIONS}
+          label={(n) => (n === 0 ? 'Off' : `${n} mazes`)}
+          onChange={(portal) => update({ portal })}
         />
         <p className="help">
-          {spec
-            ? `Portals, keys and locked gates, one-way doors and wall-break charges, placed by the seed the way the Daily Arcade's are. On ${size.width}×${size.height}: ${spec.portalPairs} portal pair${spec.portalPairs === 1 ? '' : 's'}, ${spec.gates} gate${spec.gates === 1 ? '' : 's'} with a key each, ${spec.oneWays} one-way door${spec.oneWays === 1 ? '' : 's'}, ${spec.boxes} mystery box${spec.boxes === 1 ? '' : 'es'}.`
+          {layout
+            ? `${layout.panes} mazes of ${layout.paneWidth}×${layout.paneHeight}, each cut into ${layout.sections} walled-off sections and linked only by portals, like the Daily Portal. Start in maze 1, exit in maze ${layout.panes}. ${layout.gates} gates with a key each, ${layout.oneWays} one-way doors and ${layout.boxes} ? boxes across them. The more mazes, the smaller each one, so the size above is set by this.`
             : 'A plain maze: walls, a start and an exit.'}
         </p>
       </div>

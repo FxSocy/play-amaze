@@ -1,8 +1,6 @@
 import {
-  arcadeSpecFor,
   canLeave,
   dealMysteryOutcomes,
-  generateFeatures,
   isClosedGate,
   optimalFeatureMoves,
   planRoute,
@@ -10,7 +8,7 @@ import {
   type MysteryOutcome,
   type RunState
 } from './arcade'
-import { arcadeSpec, dailyKind } from './daily'
+import { dailyKind } from './daily'
 import { generateMaze } from './generators'
 import {
   canMove,
@@ -23,8 +21,9 @@ import {
   type Direction,
   type Maze
 } from './maze'
+import { generatePortalWorld, paneOf, type PortalLayout } from './portal'
 import { createRng, randomSeed, type Rng } from './rng'
-import { FOG_LEVELS, resolveSize, type GameSettings } from './settings'
+import { FOG_LEVELS, portalLayoutFor, resolveSize, type GameSettings } from './settings'
 import { bfs, findPath } from './solver'
 
 const popcount = (n: number): number => {
@@ -95,6 +94,11 @@ export class GameSession {
   /** Portals, keys, gates and one-way doors, or null on a plain maze. */
   readonly features: MazeFeatures | null
   /**
+   * How the mazes of a Portal game sit side by side in `maze`, or null for a
+   * plain maze. Maze `k` is the columns `[k * paneWidth, (k + 1) * paneWidth)`.
+   */
+  readonly layout: PortalLayout | null
+  /**
    * What each mystery box holds, indexed like `features.boxCells`. Dealt fresh
    * for every run, so the same seed played again is a new gamble.
    */
@@ -156,13 +160,16 @@ export class GameSession {
   constructor(settings: GameSettings, seed: string, luck: Rng = createRng(randomSeed())) {
     this.settings = settings
     this.seed = seed
-    this.maze = generateMaze({ ...resolveSize(settings), algorithm: settings.algorithm, seed })
+    this.layout = portalLayoutFor(settings)
+    if (this.layout) {
+      const world = generatePortalWorld(seed, settings.algorithm, this.layout)
+      this.maze = world.maze
+      this.features = world.features
+    } else {
+      this.maze = generateMaze({ ...resolveSize(settings), algorithm: settings.algorithm, seed })
+      this.features = null
+    }
     this.player = this.maze.start
-    const spec =
-      settings.seedMode === 'daily'
-        ? arcadeSpec(seed)
-        : arcadeSpecFor(settings.arcade, this.maze.width, this.maze.height)
-    this.features = spec ? generateFeatures(this.maze, `${seed}:arcade`, spec) : null
     this.boxOutcomes = dealMysteryOutcomes(this.features?.boxCells.length ?? 0, luck)
     this.optimalMoves = this.features
       ? optimalFeatureMoves(this.maze, this.features)
@@ -201,9 +208,14 @@ export class GameSession {
     return this.settings.hints - this.hintsUsed
   }
 
-  /** True on an Arcade maze, the only kind that carries features. */
-  get isArcade(): boolean {
-    return this.features !== null
+  /** True on a Portal game, the only kind that carries features. */
+  get isPortal(): boolean {
+    return this.layout !== null
+  }
+
+  /** Which maze of a Portal game `cell` is in, from 0; always 0 on a plain maze. */
+  paneOf(cell: number): number {
+    return this.layout ? paneOf(this.layout, cell) : 0
   }
 
   /** What the player is carrying, in the form the route planner wants. */
@@ -321,7 +333,7 @@ export class GameSession {
   /**
    * Moves one cell in `dir`. Returns whether the player moved.
    *
-   * On an Arcade maze the step may also spend a wall-break charge, unlock a
+   * In a Portal game the step may also spend a wall-break charge, unlock a
    * gate, pick up a key or come out of a portal somewhere else entirely — but
    * it is still one move, so scores stay comparable with the other dailies.
    */
@@ -401,6 +413,9 @@ export class GameSession {
   private blockedByWall(dir: Direction): boolean {
     const target = neighbor(this.maze, this.player, dir)
     if (target < 0 || !hasWall(this.maze, this.player, dir)) return false
+    // The outer wall of a maze is the edge of the world, not a wall in it: the
+    // only way into another maze is a portal.
+    if (this.paneOf(target) !== this.paneOf(this.player)) return false
     if (!this.features) return true
     return !isClosedGate(this.features, this.runState, target) || this.keysHeld > 0
   }

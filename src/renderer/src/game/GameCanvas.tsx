@@ -13,7 +13,7 @@ import {
   type Camera,
   type Viewport
 } from './camera'
-import { drawScene } from './draw'
+import { drawScene, mazeMapBoxes } from './draw'
 import { Dpad } from '../components/Dpad'
 import { steer as advanceSteering, type Steering } from '../../../core/steering'
 import { useIsTouch } from '../theme'
@@ -26,6 +26,8 @@ const ROUTE_STEP_MS = 45
 const HOLD_DELAY_MS = 180
 /** Pointer travel (px) that turns a click into a drag. */
 const DRAG_THRESHOLD = 4
+/** How long "Maze 2" hangs over the screen after a portal lands the player there. */
+const ARRIVAL_MS = 700
 /** A touch that moves less than this, for less than TAP_MS, is a tap rather than a drag. */
 const TAP_SLOP = 12
 const TAP_MS = 350
@@ -139,13 +141,50 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
     /** The session already celebrated, so finishing buzzes once. */
     celebrated: null as GameSession | null,
     /** Live touch points, so gestures can tell one finger from two. */
-    touches: new Map<number, { x: number; y: number }>()
+    touches: new Map<number, { x: number; y: number }>(),
+    /**
+     * The maze of a Portal game on screen. It follows the player through every
+     * portal; the map strip or the number keys can point it elsewhere to look.
+     */
+    pane: session.paneOf(session.player),
+    /** The maze the player was last seen in, to notice a portal trip. */
+    playerPane: session.paneOf(session.player),
+    /** When the player last arrived in another maze, for the "Maze 2" flash. */
+    arrivedAt: -Infinity
+  })
+
+  /**
+   * The size of what is on screen: one maze of a Portal game, or the maze. The
+   * camera works in that maze's own cells, so all of camera.ts is unchanged.
+   */
+  const dims = (): { width: number; height: number } => ({
+    width: session.layout?.paneWidth ?? session.maze.width,
+    height: session.maze.height
+  })
+  /** A cell's column within the maze on screen. */
+  const localX = (cell: number): number => cellX(session.maze, cell) - state.current.pane * dims().width
+  /** The cell at a column and row of the maze on screen, or -1 off its edges. */
+  const worldCell = (x: number, y: number): number =>
+    x < 0 || x >= dims().width ? -1 : cellAt(session.maze, x + state.current.pane * dims().width, y)
+
+  /**
+   * How far down the maze starts: below the map strip of a Portal game, so the
+   * strip never covers a corner of the maze (where the start often is).
+   */
+  const band = (): number => {
+    const boxes = mazeMapBoxes({ session, view: state.current.view })
+    return boxes.length > 0 ? boxes[0].y + boxes[0].height + 6 : 0
+  }
+  /** The part of the canvas the maze gets; the camera lives in it. */
+  const mazeView = (): Viewport => ({
+    width: state.current.view.width,
+    height: Math.max(1, state.current.view.height - band())
   })
 
   /** The Fit control: the whole maze, however small that makes the cells. */
   const refit = (): void => {
     const st = state.current
-    st.camera = fitCamera(st.view, session.maze.width, session.maze.height)
+    st.camera = fitCamera(mazeView(), dims().width, dims().height)
   }
 
   /**
@@ -155,20 +194,30 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
    */
   const resetCamera = (): void => {
     const st = state.current
-    const { width, height } = session.maze
-    const fitted = fitCamera(st.view, width, height)
+    const { width, height } = dims()
+    const fitted = fitCamera(mazeView(), width, height)
     if (!touchRef.current || fitted.scale >= MIN_TOUCH_SCALE) {
       st.camera = fitted
       return
     }
+    // Looking at another maze than the player's, there is no player to centre on.
+    const here = session.paneOf(session.player) === st.pane
     st.camera = focusCamera(
-      st.view,
+      mazeView(),
       width,
       height,
-      cellX(session.maze, session.player) + 0.5,
-      cellY(session.maze, session.player) + 0.5,
+      here ? localX(session.player) + 0.5 : width / 2,
+      here ? cellY(session.maze, session.player) + 0.5 : height / 2,
       MIN_TOUCH_SCALE
     )
+  }
+
+  /** Puts maze `pane` of a Portal game on screen. */
+  const showPane = (pane: number): void => {
+    const st = state.current
+    if (!session.layout || pane < 0 || pane >= session.layout.panes || pane === st.pane) return
+    st.pane = pane
+    resetCamera()
   }
 
   // Reset per-maze state whenever a new session starts.
@@ -180,6 +229,8 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
     st.pointer = null
     st.touch = null
     st.touches.clear()
+    st.pane = st.playerPane = session.paneOf(session.player)
+    st.arrivedAt = -Infinity
     resetCamera()
   }, [session])
 
@@ -211,7 +262,7 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
       canvas.width = Math.round(rect.width * dpr)
       canvas.height = Math.round(rect.height * dpr)
       if (st.camera.fit) resetCamera()
-      else st.camera = pan(st.camera, 0, 0, st.view, session.maze.width, session.maze.height)
+      else st.camera = pan(st.camera, 0, 0, mazeView(), dims().width, dims().height)
     }
     const observer = new ResizeObserver(resize)
     observer.observe(container)
@@ -226,23 +277,35 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
       session.blindRemaining(now)
       stepMovement(now)
 
+      // A portal (or a box sending the player back to the start) can land them
+      // in another maze; the screen goes with them, and says where they are.
+      const playerPane = session.paneOf(st.anim.to)
+      if (playerPane !== st.playerPane) {
+        st.playerPane = playerPane
+        st.arrivedAt = now
+        st.pane = -1
+        showPane(playerPane)
+      }
+
       const t = Math.min(1, (now - st.anim.start) / st.anim.duration)
       const eased = 1 - (1 - t) * (1 - t)
       const maze = session.maze
-      const playerX = cellX(maze, st.anim.from) + (cellX(maze, st.anim.to) - cellX(maze, st.anim.from)) * eased
+      const playerX = localX(st.anim.from) + (localX(st.anim.to) - localX(st.anim.from)) * eased
       const playerY = cellY(maze, st.anim.from) + (cellY(maze, st.anim.to) - cellY(maze, st.anim.from)) * eased
-      st.camera = followPoint(st.camera, playerX + 0.5, playerY + 0.5, st.view)
+      if (st.pane === playerPane) st.camera = followPoint(st.camera, playerX + 0.5, playerY + 0.5, mazeView())
 
       const dpr = canvas.width / Math.max(1, st.view.width)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       const { appearance, palette } = appearanceRef.current
       const scene = {
         session,
-        camera: st.camera,
+        camera: { ...st.camera, y: st.camera.y + band() },
         view: st.view,
         playerX,
         playerY,
         route: st.route,
+        pane: st.pane,
+        arrival: Math.max(0, 1 - (now - st.arrivedAt) / ARRIVAL_MS),
         showTrail: breadcrumbsRef.current,
         style: appearance.mazeStyle,
         dotShape: appearance.dotShape,
@@ -270,6 +333,8 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
         // Coming out of a portal is not a walk: tweening across the maze would
         // look like the player sliding through every wall on the way.
         st.anim = { from, to: session.player, start: now, duration: steps > 1 ? 1 : duration }
+        // Moving while looking at another maze brings the view back to the player.
+        if (st.pane !== st.playerPane && session.paneOf(session.player) === st.playerPane) showPane(st.playerPane)
       }
       st.anim.from = st.anim.to = session.player
 
@@ -311,6 +376,12 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
   useEffect(() => {
     const st = state.current
     const onKeyDown = (e: KeyboardEvent): void => {
+      // 1–4 look at that maze of a Portal game; moving comes back to the player.
+      const digit = /^Digit([1-4])$/.exec(e.code)
+      if (digit && session.layout && inputEnabledRef.current && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        showPane(Number(digit[1]) - 1)
+        return
+      }
       const dir = KEY_DIRECTIONS[e.code]
       if (!dir || !inputEnabledRef.current || e.ctrlKey || e.metaKey || e.altKey) return
       e.preventDefault()
@@ -334,21 +405,30 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [])
+  }, [session])
 
   // Mouse: click to backtrack, drag from the player to trace, drag elsewhere to pan, wheel to zoom.
   useEffect(() => {
     const canvas = canvasRef.current!
     const st = state.current
-    const maze = session.maze
 
+    /** A pointer in the maze's own viewport, below any map strip. */
     const local = (e: PointerEvent | WheelEvent): [number, number] => {
       const rect = canvas.getBoundingClientRect()
-      return [e.clientX - rect.left, e.clientY - rect.top]
+      return [e.clientX - rect.left, e.clientY - rect.top - band()]
     }
     const cellUnder = (sx: number, sy: number): number => {
       const { x, y } = screenToCell(st.camera, sx, sy)
-      return cellAt(maze, x, y)
+      return worldCell(x, y)
+    }
+    /** The map strip thumbnail under a point, if any. */
+    const mapUnder = (sx: number, sy: number): number => {
+      // The strip is drawn in canvas pixels, above the maze's viewport.
+      const y = sy + band()
+      const box = mazeMapBoxes({ session, view: st.view }).find(
+        (b) => sx >= b.x - 3 && sx <= b.x + b.width + 3 && y >= b.y - 3 && y <= b.y + b.height + 3
+      )
+      return box ? box.pane : -1
     }
 
     // --- touch -------------------------------------------------------------
@@ -393,9 +473,9 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
         if (points.length !== 2) return
         const center = centerOf(points)
         const distance = distanceOf(points)
-        st.camera = pan(st.camera, center[0] - mode.lastCenter[0], center[1] - mode.lastCenter[1], st.view, maze.width, maze.height)
+        st.camera = pan(st.camera, center[0] - mode.lastCenter[0], center[1] - mode.lastCenter[1], mazeView(), dims().width, dims().height)
         if (mode.lastDistance > 0 && distance > 0) {
-          st.camera = zoomAt(st.camera, distance / mode.lastDistance, center[0], center[1], st.view, maze.width, maze.height)
+          st.camera = zoomAt(st.camera, distance / mode.lastDistance, center[0], center[1], mazeView(), dims().width, dims().height)
         }
         mode.lastCenter = center
         mode.lastDistance = distance
@@ -419,7 +499,7 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
         [0, 1],
         [0, -1]
       ]) {
-        const cell = cellAt(maze, Math.floor(x) + dx, Math.floor(y) + dy)
+        const cell = worldCell(Math.floor(x) + dx, Math.floor(y) + dy)
         if (cell < 0) continue
         candidates.push({ cell, distance: Math.hypot(Math.floor(x) + dx + 0.5 - x, Math.floor(y) + dy + 0.5 - y) })
       }
@@ -459,6 +539,12 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
     const onPointerDown = (e: PointerEvent): void => {
       if (!inputEnabledRef.current) return
       const [sx, sy] = local(e)
+      // A thumbnail in the map strip puts that maze on screen, and is nothing else.
+      const mapped = mapUnder(sx, sy)
+      if (mapped >= 0) {
+        showPane(mapped)
+        return
+      }
       canvas.setPointerCapture(e.pointerId)
       if (e.pointerType === 'touch') return onTouchDown(e, sx, sy)
       if (e.button === 0) {
@@ -485,7 +571,7 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
         return onPointerMove(e)
       }
       if (mode.kind === 'pan') {
-        st.camera = pan(st.camera, sx - mode.lastX, sy - mode.lastY, st.view, maze.width, maze.height)
+        st.camera = pan(st.camera, sx - mode.lastX, sy - mode.lastY, mazeView(), dims().width, dims().height)
         mode.lastX = sx
         mode.lastY = sy
         canvas.style.cursor = 'grabbing'
@@ -521,7 +607,7 @@ export function GameCanvas({ session, inputEnabled, fitRequest, breadcrumbs, app
       if (!inputEnabledRef.current) return
       const [sx, sy] = local(e)
       const factor = Math.exp(-e.deltaY * 0.0015)
-      st.camera = zoomAt(st.camera, factor, sx, sy, st.view, maze.width, maze.height)
+      st.camera = zoomAt(st.camera, factor, sx, sy, mazeView(), dims().width, dims().height)
     }
 
     const onContextMenu = (e: MouseEvent): void => e.preventDefault()

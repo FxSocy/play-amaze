@@ -18,7 +18,7 @@ export interface SearchOptions {
  * Breadth-first search through open passages.
  *
  * This is the plain-maze search: walls are the only thing it knows about. A
- * maze carrying Arcade features needs `planRoute` in `arcade.ts` instead, which
+ * maze carrying Portal features needs `planRoute` in `arcade.ts` instead, which
  * understands portals, keys, gates and one-way doors.
  */
 export function bfs(maze: Maze, from: number, options: SearchOptions = {}): BfsResult {

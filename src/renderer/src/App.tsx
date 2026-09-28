@@ -19,6 +19,8 @@ import { FinishDialog } from './components/FinishDialog'
 import { ConfirmGiveUpDialog, GaveUpDialog } from './components/GiveUpDialogs'
 import { Hud } from './components/Hud'
 import { MysterySpinner } from './components/MysterySpinner'
+import { PortalGuide } from './components/PortalGuide'
+import { Dialog } from './components/Dialog'
 import { RecordsDialog } from './components/RecordsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { TouchHint } from './components/TouchHint'
@@ -34,6 +36,7 @@ type DialogState =
   | { kind: 'gave-up' }
   | { kind: 'finish'; record: TimeRecord; previousBest: TimeRecord | null }
   | { kind: 'confirm-leave'; action: () => void }
+  | { kind: 'portal-guide' }
   | null
 
 interface Boot {
@@ -269,11 +272,11 @@ function Game({ boot }: { boot: Boot }) {
           return toggleBreadcrumbs()
         case 'KeyX':
           // Arms a wall-break charge; the next move into a wall spends it.
-          if (session.isArcade) session.armBreak()
+          if (session.isPortal) session.armBreak()
           return
         case 'KeyZ':
           // Same, for a jump: over the wall rather than through it.
-          if (session.isArcade) session.armJump()
+          if (session.isPortal) session.armJump()
           return
         case 'KeyF':
           return setFitRequest((n) => n + 1)
@@ -307,6 +310,7 @@ function Game({ boot }: { boot: Boot }) {
         onOpenSettings={() => setDialog({ kind: 'settings' })}
         onOpenAppearance={() => setDialog({ kind: 'appearance' })}
         onOpenRecords={() => setDialog({ kind: 'records' })}
+        onOpenPortalGuide={() => setDialog({ kind: 'portal-guide' })}
         onFit={() => setFitRequest((n) => n + 1)}
         touchDpad={appearance.touchDpad}
         onToggleDpad={() => setAppearance((a) => ({ ...a, touchDpad: !a.touchDpad }))}
@@ -338,6 +342,7 @@ function Game({ boot }: { boot: Boot }) {
             session={session}
             existing={daily}
             onStart={start}
+            palette={palette}
             // The modes are their own navigation now, so the only switch worth
             // offering here is the Doozie the player has just unlocked.
             onSwitch={
@@ -355,13 +360,13 @@ function Game({ boot }: { boot: Boot }) {
           <>
             Drag to move · Tap to backtrack · Two fingers to pan · Pinch to zoom
             {session.settings.hints > 0 && ' · Hint in the header'}
-            {session.isArcade && ' · Keys, breaks and jumps in the menu'}
+            {session.isPortal && ' · Tap the map to look at another maze · Breaks and jumps in the menu'}
           </>
         ) : (
           <>
             Arrows / WASD / HJKL move · Click to backtrack · Drag from player to trace · Scroll zoom · F fit
             {session.settings.hints > 0 && ' · E hint'}
-            {session.isArcade && ' · X break · Z jump'} · T breadcrumbs · G give up · N new · R retry
+            {session.isPortal && ` · 1–${session.layout!.panes} look at a maze · X break · Z jump`} · T breadcrumbs · G give up · N new · R retry
           </>
         )}
       </footer>
@@ -417,6 +422,19 @@ function Game({ boot }: { boot: Boot }) {
           {daily && <DailyScorePanel {...daily} practice={!isScoredSession(session)} />}
           {justSolvedDaily && <DoozieUnlocked onPlay={() => playDaily('doozie')} />}
         </FinishDialog>
+      )}
+      {dialog?.kind === 'portal-guide' && (
+        <Dialog title="How Portal works" onClose={closeDialog} wide>
+          <PortalGuide session={session} palette={palette} />
+          <footer className="dialog-footer">
+            <div className="footer-left" />
+            <div className="footer-right">
+              <button className="btn btn-primary" onClick={closeDialog} autoFocus>
+                Back to the maze
+              </button>
+            </div>
+          </footer>
+        </Dialog>
       )}
       {dialog?.kind === 'confirm-leave' && (
         <ConfirmLeaveDailyDialog onConfirm={() => leaveScoredRun(dialog.action)} onCancel={closeDialog} />

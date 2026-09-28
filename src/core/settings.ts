@@ -1,11 +1,14 @@
-import { ARCADE_LABELS, ARCADE_LEVELS, type ArcadeLevel } from './arcade'
 import { dailyDate, dailyLabel } from './daily'
 import { ALGORITHM_IDS, GENERATORS, type AlgorithmId } from './generators'
+import { PORTAL_COUNTS, PORTAL_LAYOUTS, type PortalCount, type PortalLayout } from './portal'
 
 export type SizePresetId = 'small' | 'medium' | 'large' | 'huge' | 'custom'
 export type FogLevel = 'off' | 'light' | 'dense'
 export type SeedMode = 'random' | 'daily'
 export type HintCount = 0 | 1 | 3 | 5
+/** How many linked mazes a custom game has; 0 is a plain maze. */
+export type PortalSetting = 0 | PortalCount
+export const PORTAL_OPTIONS: readonly PortalSetting[] = [0, ...PORTAL_COUNTS]
 
 export interface GameSettings {
   algorithm: AlgorithmId
@@ -18,10 +21,11 @@ export interface GameSettings {
   /** Hints available per maze; 0 disables the hint modifier. */
   hints: HintCount
   /**
-   * Arcade features on a custom maze: portals, keys, gates, one-way doors and
-   * wall-break charges. The daily mazes set their own and ignore this.
+   * Portal mode on a custom maze: how many linked mazes, or 0 for a plain one.
+   * Each count has its own maze size (`PORTAL_LAYOUTS`), which replaces the
+   * size setting. The daily mazes set their own and ignore this.
    */
-  arcade: ArcadeLevel
+  portal: PortalSetting
   /** Display preference: draw the passages already walked. */
   breadcrumbs: boolean
 }
@@ -56,11 +60,19 @@ export const DEFAULT_SETTINGS: Readonly<GameSettings> = {
   seedMode: 'daily',
   fog: 'off',
   hints: 0,
-  arcade: 'off',
+  portal: 0,
   breadcrumbs: true
 }
 
+/** The Portal layout these settings call for, or null for a plain maze. */
+export function portalLayoutFor(settings: GameSettings): PortalLayout | null {
+  return settings.portal === 0 ? null : PORTAL_LAYOUTS[settings.portal]
+}
+
 export function resolveSize(settings: GameSettings): { width: number; height: number } {
+  // A Portal game's size is one maze's, and it comes with the count.
+  const layout = portalLayoutFor(settings)
+  if (layout) return { width: layout.paneWidth, height: layout.paneHeight }
   if (settings.sizePreset === 'custom') {
     return { width: settings.customWidth, height: settings.customHeight }
   }
@@ -89,7 +101,7 @@ export function sanitizeSettings(raw: unknown): GameSettings {
     seedMode: oneOf(src.seedMode, SEED_MODES, d.seedMode),
     fog: oneOf(src.fog, FOG_LEVEL_IDS, d.fog),
     hints: oneOf(src.hints, HINT_OPTIONS, d.hints),
-    arcade: oneOf(src.arcade, ARCADE_LEVELS, d.arcade),
+    portal: oneOf(src.portal, PORTAL_OPTIONS, d.portal),
     breadcrumbs: typeof src.breadcrumbs === 'boolean' ? src.breadcrumbs : d.breadcrumbs
   }
 }
@@ -102,15 +114,15 @@ export function sanitizeSettings(raw: unknown): GameSettings {
 export function modifierKey(settings: GameSettings, seed: string): string {
   if (settings.seedMode === 'daily') return `daily|${seed}`
   const { width, height } = resolveSize(settings)
-  return `${settings.algorithm}|${width}x${height}|fog:${settings.fog}|hints:${settings.hints}|arcade:${settings.arcade}`
+  return `${settings.algorithm}|${width}x${height}|fog:${settings.fog}|hints:${settings.hints}|portal:${settings.portal}`
 }
 
 export function describeModifiers(settings: GameSettings, seed: string): string {
   const { width, height } = resolveSize(settings)
-  const parts = [GENERATORS[settings.algorithm].name, `${width}×${height}`]
+  const size = settings.portal === 0 ? `${width}×${height}` : `${settings.portal} mazes of ${width}×${height}`
+  const parts = [GENERATORS[settings.algorithm].name, size]
   if (settings.seedMode === 'daily') parts.unshift(`${dailyLabel(seed)} ${dailyDate(seed)}`)
   if (settings.fog !== 'off') parts.push(`${FOG_LEVELS[settings.fog].label} fog`)
   if (settings.hints > 0) parts.push(`${settings.hints} hint${settings.hints === 1 ? '' : 's'}`)
-  if (settings.arcade !== 'off') parts.push(`${ARCADE_LABELS[settings.arcade]} arcade`)
   return parts.join(' · ')
 }

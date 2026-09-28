@@ -11,9 +11,10 @@ Only your first attempt each day is scored (time × moves, lower is better), and
 your clipboard as shareable text, with a link so whoever you send it to can play the same maze.
 
 There are three dailies and a mode of your own: the **Daily**, the **Doozie** (hard mode, unlocked by
-solving the Daily), the **Arcade** — a smaller maze strewn with portals, keys, locked gates, one-way
-doors and ? boxes that spin for a prize or a punishment — and **Custom**, your own size, algorithm, fog, hints — and Arcade features, if you want portals in
-a maze of your own.
+solving the Daily), **Portal** — two mazes, each cut into walled-off sections, that only portals
+connect, so the way to the exit bounces between them, with keys, locked gates, one-way doors and
+? boxes that spin for a prize or a punishment — and **Custom**, your own size, algorithm, fog and
+hints, or a Portal game of 2, 3 or 4 mazes.
 Pick one in the header; everything else is behind **Menu**.
 
 A daily maze stays hidden until you press **Start** (or Enter / Space), which starts the clock.

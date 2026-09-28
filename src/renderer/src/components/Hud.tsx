@@ -25,6 +25,8 @@ interface Props {
   onOpenSettings: () => void
   onOpenAppearance: () => void
   onOpenRecords: () => void
+  /** The rules of Portal, for a Portal game. */
+  onOpenPortalGuide: () => void
   onFit: () => void
   /** Whether the on-screen direction pad is showing (touch devices only). */
   touchDpad: boolean
@@ -85,6 +87,7 @@ export function Hud({
   onOpenSettings,
   onOpenAppearance,
   onOpenRecords,
+  onOpenPortalGuide,
   onFit,
   touchDpad,
   onToggleDpad
@@ -118,7 +121,7 @@ export function Hud({
       : []
 
   /**
-   * Arcade's wall-break charge. You start with none and the only source is a
+   * Portal's wall-break charge. You start with none and the only source is a
    * mystery box, so the control says where you stand until you hold one.
    */
   const breakDetail =
@@ -141,7 +144,7 @@ export function Hud({
     session.jumpsLeft > 0
       ? 'Arm a jump, then move into the wall to hop it (Z)'
       : 'Open a ? box and hope for a jump'
-  const breakAction: SheetAction[] = session.isArcade
+  const breakAction: SheetAction[] = session.isPortal
     ? [
         {
           key: 'break',
@@ -170,6 +173,9 @@ export function Hud({
     { key: 'retry', label: 'Retry this maze', title: 'Play the same maze again (R)', onClick: onRetry },
     ...hintAction,
     ...breakAction,
+    ...(session.isPortal
+      ? [{ key: 'portal-guide', label: 'How Portal works', title: 'Mazes, sections, portals, keys and boxes', onClick: onOpenPortalGuide }]
+      : []),
     {
       key: 'breadcrumbs',
       label: 'Breadcrumbs',
@@ -217,7 +223,7 @@ export function Hud({
         <span className="stat-label">Moves</span>
         <span className="stat-value mono">{session.moves}</span>
       </span>
-      {session.isArcade && (
+      {session.isPortal && (
         <span className="stat" title="Keys in hand; a locked gate costs one">
           <span className="stat-label">Keys</span>
           <span className="stat-value mono">

@@ -12,6 +12,13 @@ export interface Scene {
   playerY: number
   /** Cells still queued for mouse-driven movement. */
   route: readonly number[]
+  /**
+   * The maze of a Portal game on screen, from 0; always 0 on a plain maze. The
+   * camera is in that maze's own cell units, as if it were the only one.
+   */
+  pane: number
+  /** 1 fading to 0 just after the player arrives in another maze; 0 otherwise. */
+  arrival: number
   /** Draw breadcrumbs along passages the player has already walked. */
   showTrail: boolean
   style: MazeStyleId
@@ -123,11 +130,25 @@ export function drawDot(
   ctx.restore()
 }
 
+/**
+ * The colour of each maze in a Portal game. A portal is drawn in the colour of
+ * the maze it leads to, so the map strip and the portals speak one language.
+ */
+export function paneColor(palette: Palette, pane: number): string {
+  return [palette.accent, palette.doozie, palette.charge, palette.hint][pane % 4]
+}
+
 export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: Palette): void {
-  const { session, camera: cam, view, now } = scene
+  const { session, view, now } = scene
   const { maze, explored, visible } = session
   const { width: w, height: h, walls } = maze
-  const s = cam.scale
+  // A Portal game draws one of its mazes, as if it were the only one: the camera
+  // is in that maze's units, shifted here onto its columns of the shared grid.
+  const paneW = session.layout?.paneWidth ?? w
+  const paneX = scene.pane * paneW
+  const s = scene.camera.scale
+  const cam = { ...scene.camera, x: scene.camera.x - paneX * s }
+  const left = scene.camera.x
   const fog = session.fogEnabled
   const style = STYLES[scene.style]
   const snap = style.pixel ? Math.round : (v: number): number => v
@@ -135,9 +156,10 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
   ctx.fillStyle = palette.canvasBg
   ctx.fillRect(0, 0, view.width, view.height)
 
-  // Only iterate cells that intersect the viewport.
-  const x0 = Math.max(0, Math.floor(-cam.x / s))
-  const x1 = Math.min(w - 1, Math.floor((view.width - cam.x) / s))
+  // Only iterate cells that intersect the viewport, and only this maze's.
+  const lastX = paneX + paneW - 1
+  const x0 = Math.max(paneX, Math.floor(-cam.x / s))
+  const x1 = Math.min(lastX, Math.floor((view.width - cam.x) / s))
   const y0 = Math.max(0, Math.floor(-cam.y / s))
   const y1 = Math.min(h - 1, Math.floor((view.height - cam.y) / s))
   const px = (x: number): number => snap(cam.x + x * s)
@@ -146,12 +168,20 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
   if (session.awaitingStart) {
     // Only the maze's outline until the run starts, so nothing can be planned ahead.
     ctx.fillStyle = palette.fog
-    ctx.fillRect(cam.x, cam.y, w * s, h * s)
+    ctx.fillRect(left, cam.y, paneW * s, h * s)
+    drawMazeMap(ctx, scene, palette)
     return
   }
 
   ctx.fillStyle = fog ? palette.fog : palette.floor
-  ctx.fillRect(cam.x, cam.y, w * s, h * s)
+  ctx.fillRect(left, cam.y, paneW * s, h * s)
+
+  // Routes and hints can run on into another maze; only this one's part shows.
+  ctx.save()
+  const bleed = s * 0.5
+  ctx.beginPath()
+  ctx.rect(left - bleed, cam.y - bleed, paneW * s + bleed * 2, h * s + bleed * 2)
+  ctx.clip()
 
   if (fog) {
     const seenFloor = new Path2D()
@@ -227,7 +257,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
       if (bits & WALL_N) segs.push(x, y, x + 1, y)
       if (bits & WALL_W) segs.push(x, y, x, y + 1)
       if (bits & WALL_S && (y === h - 1 || !explored[i + w])) segs.push(x, y + 1, x + 1, y + 1)
-      if (bits & WALL_E && (x === w - 1 || !explored[i + 1])) segs.push(x + 1, y, x + 1, y + 1)
+      if (bits & WALL_E && (x === lastX || !explored[i + 1])) segs.push(x + 1, y, x + 1, y + 1)
     }
   }
   const stroke = (segs: number[], color: string, glow: boolean): void =>
@@ -316,9 +346,148 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, palette: 
     ctx.stroke()
   }
 
-  drawDot(ctx, scene.dotShape, playerX, playerY, Math.max(2.5, s * 0.3), palette.player, s * style.glow)
+  if (session.paneOf(session.player) === scene.pane) {
+    drawDot(ctx, scene.dotShape, playerX, playerY, Math.max(2.5, s * 0.3), palette.player, s * style.glow)
+  }
+  ctx.restore()
 
-  if (scene.style === 'retro') drawScanlines(ctx, cam, view, w * s, h * s)
+  if (scene.style === 'retro') drawScanlines(ctx, scene.camera, view, paneW * s, h * s)
+  if (scene.arrival > 0) drawArrival(ctx, scene, palette)
+  drawMazeMap(ctx, scene, palette)
+}
+
+/**
+ * Where each maze's thumbnail sits in the map strip, in canvas pixels, or an
+ * empty list on a plain maze. GameCanvas uses the same boxes to tell which
+ * thumbnail was clicked.
+ */
+export function mazeMapBoxes(scene: Pick<Scene, 'session' | 'view'>): { pane: number; x: number; y: number; width: number; height: number }[] {
+  const layout = scene.session.layout
+  if (!layout) return []
+  const compact = scene.view.width < 560
+  const maxHeight = compact ? 40 : 56
+  const maxWidth = compact ? 64 : 96
+  const cell = Math.min(maxHeight / layout.paneHeight, maxWidth / layout.paneWidth)
+  const width = Math.round(cell * layout.paneWidth)
+  const height = Math.round(cell * layout.paneHeight)
+  const gap = 8
+  return Array.from({ length: layout.panes }, (_, pane) => ({
+    pane,
+    x: MAP_MARGIN + pane * (width + gap),
+    y: MAP_MARGIN,
+    width,
+    height
+  }))
+}
+
+const MAP_MARGIN = 10
+
+/**
+ * The map strip: every maze of a Portal game in miniature, top left. The one on
+ * screen is outlined, the player's dot shows which one they are in, and each
+ * portal is a speck in the colour of the maze it leads to.
+ */
+function drawMazeMap(ctx: CanvasRenderingContext2D, scene: Scene, palette: Palette): void {
+  const { session } = scene
+  const layout = session.layout
+  const boxes = mazeMapBoxes(scene)
+  if (!layout || boxes.length === 0) return
+  const { maze } = session
+  const playerPane = session.paneOf(session.player)
+  const hidden = session.awaitingStart
+
+  ctx.save()
+  for (const box of boxes) {
+    const cell = box.width / layout.paneWidth
+    const color = paneColor(palette, box.pane)
+    const shown = box.pane === scene.pane
+
+    ctx.globalAlpha = 0.94
+    ctx.fillStyle = palette.floor
+    ctx.beginPath()
+    ctx.roundRect(box.x - 3, box.y - 3, box.width + 6, box.height + 6, 5)
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.lineWidth = shown ? 2.5 : 1.5
+    ctx.strokeStyle = shown ? color : palette.wallSeen
+    ctx.stroke()
+
+    if (!hidden) {
+      const walls = new Path2D()
+      const specks: [number, number, string][] = []
+      for (let y = 0; y < layout.paneHeight; y++) {
+        for (let x = 0; x < layout.paneWidth; x++) {
+          const i = y * maze.width + box.pane * layout.paneWidth + x
+          const bits = maze.walls[i]
+          const sx = box.x + x * cell
+          const sy = box.y + y * cell
+          if (bits & WALL_N && y > 0) {
+            walls.moveTo(sx, sy)
+            walls.lineTo(sx + cell, sy)
+          }
+          if (bits & WALL_W && x > 0) {
+            walls.moveTo(sx, sy)
+            walls.lineTo(sx, sy + cell)
+          }
+          const exit = session.features?.portals[i] ?? -1
+          if (exit >= 0) specks.push([sx + cell / 2, sy + cell / 2, paneColor(palette, session.paneOf(exit))])
+        }
+      }
+      ctx.strokeStyle = palette.wallSeen
+      ctx.lineWidth = 0.75
+      ctx.stroke(walls)
+      for (const [sx, sy, speck] of specks) {
+        ctx.fillStyle = speck
+        ctx.beginPath()
+        ctx.arc(sx, sy, Math.max(1.6, cell * 0.9), 0, Math.PI * 2)
+        ctx.fill()
+      }
+      const mark = (target: number, fill: string, radius: number): void => {
+        if (session.paneOf(target) !== box.pane) return
+        const x = (target % maze.width) - box.pane * layout.paneWidth
+        const y = Math.floor(target / maze.width)
+        ctx.fillStyle = fill
+        ctx.beginPath()
+        ctx.arc(box.x + (x + 0.5) * cell, box.y + (y + 0.5) * cell, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      mark(maze.end, palette.exit, Math.max(2.2, cell * 1.2))
+      if (box.pane === playerPane) mark(session.player, palette.player, Math.max(2.6, cell * 1.4))
+    }
+
+    // The maze's number, in its own colour, so "the portal marked 2" and
+    // "the second thumbnail" are obviously the same place.
+    const badge = 15
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(box.x + box.width - 2, box.y + box.height - 2, badge / 2, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = palette.floor
+    ctx.font = `bold 10px ui-sans-serif, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(String(box.pane + 1), box.x + box.width - 2, box.y + box.height - 1.5)
+  }
+  ctx.restore()
+}
+
+/** "Maze 2", large and fading, the moment a portal lands the player somewhere new. */
+function drawArrival(ctx: CanvasRenderingContext2D, scene: Scene, palette: Palette): void {
+  const { view, arrival } = scene
+  const color = paneColor(palette, scene.pane)
+  ctx.save()
+  ctx.globalAlpha = arrival * 0.28
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, view.width, view.height)
+  ctx.globalAlpha = Math.min(1, arrival * 1.6)
+  ctx.fillStyle = color
+  ctx.font = `800 ${Math.round(Math.min(64, view.width / 8))}px ui-sans-serif, system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.shadowColor = palette.canvasBg
+  ctx.shadowBlur = 12
+  ctx.fillText(`Maze ${scene.pane + 1}`, view.width / 2, view.height / 2)
+  ctx.restore()
 }
 
 /** Whether two cells share an edge, which a portal jump's endpoints do not. */
@@ -329,12 +498,12 @@ function adjacent(width: number, a: number, b: number): boolean {
 }
 
 /**
- * Arcade features, drawn over the floor and under the player: portals, keys,
+ * Portal features, drawn over the floor and under the player: portals, keys,
  * gates and the chevrons that mark a one-way door.
  *
  * Colours come from the theme the player already chose, so every theme gets a
- * readable Arcade maze: the two portal pairs borrow the accent and Doozie
- * colours, keys the hint colour and a locked gate the danger colour. Charges
+ * readable Portal maze: a portal takes the colour of the maze it leads to
+ * (`paneColor`), keys the hint colour and a locked gate the danger colour. Charges
  * are the exception and carry a colour of their own — `success` sits right on
  * top of `exit` in several themes, and a second green marker would read as a
  * second way out.
@@ -355,10 +524,6 @@ function drawFeatures(
   const { session } = scene
   const features = session.features!
   const w = session.maze.width
-  const pairColor = (cell: number): string => {
-    const index = features.portalPairs.findIndex(([a, b]) => a === cell || b === cell)
-    return index % 2 === 0 ? palette.accent : palette.doozie
-  }
 
   ctx.save()
   for (let y = y0; y <= y1; y++) {
@@ -370,7 +535,8 @@ function drawFeatures(
       const glow = style.glow > 0 ? s * style.glow : 0
 
       if (features.portals[cell] >= 0) {
-        drawPortal(ctx, cx, cy, s, pairColor(cell), glow)
+        const to = session.paneOf(features.portals[cell])
+        drawPortal(ctx, cx, cy, s, paneColor(palette, to), glow, to + 1)
       }
       if (session.keyAt(cell)) {
         drawKey(ctx, cx, cy, s, palette.hint, glow)
@@ -393,14 +559,19 @@ function drawFeatures(
   ctx.restore()
 }
 
-/** Two rings, like something you could step into. */
-function drawPortal(
+/**
+ * Two rings, like something you could step into, around the number of the maze
+ * it leads to. Exported for the Portal guide, which draws its legend with the
+ * same functions the maze does.
+ */
+export function drawPortal(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   s: number,
   color: string,
-  glow: number
+  glow: number,
+  to?: number
 ): void {
   ctx.save()
   if (glow > 0) {
@@ -412,15 +583,26 @@ function drawPortal(
   ctx.beginPath()
   ctx.arc(cx, cy, s * 0.32, 0, Math.PI * 2)
   ctx.stroke()
-  ctx.globalAlpha = 0.55
-  ctx.beginPath()
-  ctx.arc(cx, cy, s * 0.16, 0, Math.PI * 2)
-  ctx.stroke()
+  // Big enough to read, the number replaces the inner ring; below that the
+  // colour alone says where it goes.
+  if (to !== undefined && s >= 14) {
+    ctx.shadowBlur = 0
+    ctx.fillStyle = color
+    ctx.font = `bold ${Math.round(s * 0.4)}px ui-sans-serif, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(String(to), cx, cy + s * 0.02)
+  } else {
+    ctx.globalAlpha = 0.55
+    ctx.beginPath()
+    ctx.arc(cx, cy, s * 0.16, 0, Math.PI * 2)
+    ctx.stroke()
+  }
   ctx.restore()
 }
 
 /** A key: a ring with a toothed stem. */
-function drawKey(
+export function drawKey(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
@@ -447,7 +629,7 @@ function drawKey(
 }
 
 /** A mystery box: a boxed question mark, waiting at the end of some branch. */
-function drawMysteryBox(
+export function drawMysteryBox(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
@@ -479,7 +661,7 @@ function drawMysteryBox(
 }
 
 /** A barred gate; once unlocked it fades to a frame the player can walk through. */
-function drawGate(
+export function drawGate(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
@@ -505,7 +687,7 @@ function drawGate(
 }
 
 /** A chevron on the passage edge, pointing the only way through it. */
-function drawOneWay(
+export function drawOneWay(
   ctx: CanvasRenderingContext2D,
   left: number,
   top: number,

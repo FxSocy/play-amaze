@@ -1,7 +1,8 @@
 /**
- * Arcade features: the things on an Arcade maze that a plain maze has no idea
- * about — portals, keys, locked gates and one-way doors — plus the pathfinding
- * that understands them.
+ * Portal features: the things on a Portal maze that a plain maze has no idea
+ * about — portals, keys, locked gates, one-way doors and mystery boxes — plus
+ * the pathfinding that understands them. `portal.ts` builds the linked mazes
+ * and their portals; this file places everything else on them and plans routes.
  *
  * Two rules shape everything here:
  *
@@ -15,7 +16,7 @@
  *    player would, so the game never points at a door it knows is locked.
  *
  * Like `daily.ts`, this file decides what a seed means: changing it changes past
- * Arcade mazes for every player. Treat the numbers as frozen.
+ * Portal mazes for every player. Treat the numbers as frozen.
  */
 
 import {
@@ -28,20 +29,10 @@ import {
   type Direction,
   type Maze
 } from './maze'
-import { createRng, type Rng } from './rng'
-import { bfs, findPath } from './solver'
+import type { Rng } from './rng'
 
-/**
- * How many Arcade features a custom maze asks for. The three dailies have their
- * own fixed standards in `daily.ts`; this is the dial a player gets.
- */
-export type ArcadeLevel = 'off' | 'light' | 'full'
-export const ARCADE_LEVELS: readonly ArcadeLevel[] = ['off', 'light', 'full']
-export const ARCADE_LABELS: Record<ArcadeLevel, string> = { off: 'Off', light: 'Light', full: 'Full' }
-
-/** How many of each feature an Arcade maze carries. */
-export interface ArcadeSpec {
-  portalPairs: number
+/** How many of each feature a Portal game carries, across all of its mazes. */
+export interface FeatureSpec {
   gates: number
   oneWays: number
   /** Mystery boxes, which are the only source of a wall-break charge. */
@@ -128,30 +119,6 @@ export const EMPTY_RUN_STATE: RunState = { keysHeld: 0, collected: 0, opened: 0 
  */
 export const MAX_KEYS = 4
 export const MAX_GATES = 4
-
-/**
- * Portals must not turn the maze into a three-move walk: a layout whose best
- * route is shorter than this fraction of the plain maze's is thrown away.
- */
-const MIN_ROUTE_FRACTION = 0.5
-
-/**
- * What a custom maze of this size gets at each level, or null for none.
- *
- * Portals and one-way doors scale with the area — two portals in a 90×56 maze
- * would be a rumour rather than a mechanic, and six in a 15×10 would be most of
- * the maze. Gates stay at one or two whatever the size: they are about pacing a
- * run, not about density, and each one costs the route planner a dimension.
- */
-export function arcadeSpecFor(level: ArcadeLevel, width: number, height: number): ArcadeSpec | null {
-  if (level === 'off') return null
-  const cells = width * height
-  const perArea = (per: number, min: number, max: number): number =>
-    Math.max(min, Math.min(max, Math.round(cells / per)))
-  return level === 'light'
-    ? { portalPairs: perArea(700, 1, 3), gates: 1, oneWays: perArea(800, 1, 3), boxes: perArea(400, 2, 4) }
-    : { portalPairs: perArea(300, 2, 6), gates: 2, oneWays: perArea(350, 2, 6), boxes: perArea(200, 3, 8) }
-}
 
 export function emptyFeatures(maze: Maze): MazeFeatures {
   const n = cellCount(maze)
@@ -364,37 +331,61 @@ export function isEscapable(maze: Maze, features: MazeFeatures): boolean {
 }
 
 /**
- * Places features on `maze` for `seed`. Deterministic: the same seed and maze
- * always produce the same layout, which is what makes a shared daily Arcade
- * maze fair.
+ * Places keys, gates, one-way doors and mystery boxes on a maze whose portals
+ * are already in `features`. Deterministic: the same maze and `rng` always
+ * produce the same layout, which is what makes a shared daily fair.
  *
  * Each feature is placed under a rule that keeps the maze finishable:
  *
- * - **Gates** sit on the one route from start to exit, so they always matter,
- *   and every **key** is placed in the region the player can reach before the
- *   first gate, so the keys can always be found first.
+ * - **Gates** sit on chokepoints of the route from start to exit — cells every
+ *   route has to cross, portals included — so they always matter, and every
+ *   **key** is placed where the player can reach it before meeting any gate.
  * - **One-way doors** are only placed on the run home, after the last gate:
  *   past that point nothing behind the player is needed again.
- * - **Portals** are extra two-way links, which can only help — except by making
- *   the maze too short, which is checked for.
+ *
+ * Cells already in `taken` (portals, the start and the exit) are left alone.
  */
-export function generateFeatures(maze: Maze, seed: string, spec: ArcadeSpec): MazeFeatures {
-  const rng = createRng(seed)
-  const features = emptyFeatures(maze)
-
-  const main = findPath(maze, maze.start, maze.end)
-  if (!main || main.length < 8) return features
-
-  const taken = new Uint8Array(cellCount(maze))
-  taken[maze.start] = 1
-  taken[maze.end] = 1
+export function placeFeatures(
+  maze: Maze,
+  features: MazeFeatures,
+  taken: Uint8Array,
+  spec: FeatureSpec,
+  rng: Rng
+): void {
+  const main = planRoute(maze, features, EMPTY_RUN_STATE, maze.start, maze.end)
+  if (!main || main.length < 8) return
 
   placeGatesAndKeys(maze, features, taken, main, Math.min(spec.gates, MAX_GATES, MAX_KEYS), rng)
   placeOneWays(maze, features, main, spec.oneWays, rng)
-  placePortals(maze, features, taken, spec.portalPairs, rng)
   placeBoxes(maze, features, taken, spec.boxes, rng)
+}
 
-  return features
+/**
+ * Every cell the player could get to from `from`, walking and taking portals,
+ * without ever setting foot on a cell `passable` refuses.
+ */
+export function reachable(
+  maze: Maze,
+  features: MazeFeatures,
+  from: number,
+  passable: (cell: number) => boolean = () => true
+): Uint8Array {
+  const seen = new Uint8Array(cellCount(maze))
+  const queue = [from]
+  seen[from] = 1
+  for (let i = 0; i < queue.length; i++) {
+    const cell = queue[i]
+    for (const dir of DIRECTION_LIST) {
+      if (!canLeave(maze, features, cell, dir)) continue
+      const step = neighbor(maze, cell, dir)
+      if (!passable(step)) continue
+      const landing = portalExit(features, step)
+      if (seen[landing] || !passable(landing)) continue
+      seen[landing] = 1
+      queue.push(landing)
+    }
+  }
+  return seen
 }
 
 /**
@@ -446,8 +437,12 @@ export function dealMysteryOutcomes(count: number, rng: Rng): MysteryOutcome[] {
 }
 
 /**
- * Gates go on the main path, spread out along its second half; each gate's key
- * goes somewhere the player can reach without passing any of them.
+ * Gates go on the route to the exit, spread out along its middle; each gate's
+ * key goes somewhere the player can reach without passing any of them.
+ *
+ * A gate is only placed on a chokepoint: a cell with no way around it, not even
+ * through a portal. A gate that could be walked around would make its key
+ * pointless and the run a lottery on which way you happened to go.
  */
 function placeGatesAndKeys(
   maze: Maze,
@@ -458,42 +453,45 @@ function placeGatesAndKeys(
   rng: Rng
 ): void {
   if (count <= 0) return
-  // Gates live in the middle third of the route. Earlier than that and the
-  // player meets one before they have explored anything; later and there is no
-  // run home left for the one-way doors, which are only safe after the last gate.
-  const candidates = main.slice(Math.floor(main.length * 0.3), Math.floor(main.length * 0.7))
+  // Gates live in the middle of the route. Earlier than that and the player
+  // meets one before they have explored anything; later and there is no run
+  // home left for the one-way doors, which are only safe after the last gate.
+  const isChokepoint = (cell: number): boolean =>
+    reachable(maze, features, maze.start, (other) => other !== cell)[maze.end] === 0
+  const candidates = main
+    .slice(Math.floor(main.length * 0.3), Math.floor(main.length * 0.7))
+    .filter((cell) => !taken[cell] && isChokepoint(cell))
   if (candidates.length < count) return
 
   const gates: number[] = []
   const span = Math.floor(candidates.length / count)
   for (let i = 0; i < count && span > 0; i++) {
     const cell = candidates[i * span + rng.int(span)]
-    if (taken[cell]) continue
     taken[cell] = 1
     gates.push(cell)
   }
   if (gates.length === 0) return
 
   // Everywhere the player can go before meeting a gate; the keys must live here.
-  const beforeGates = bfs(maze, maze.start, { passable: (cell) => !gates.includes(cell) })
-  const reachable: number[] = []
+  const beforeGates = reachable(maze, features, maze.start, (cell) => !gates.includes(cell))
+  const pool: number[] = []
   for (let cell = 0; cell < taken.length; cell++) {
-    if (beforeGates.dist[cell] > 0 && !taken[cell]) reachable.push(cell)
+    if (beforeGates[cell] && !taken[cell]) pool.push(cell)
   }
-  if (reachable.length < gates.length) return
+  if (pool.length < gates.length) return
 
   // Dead ends make the better hiding places: a key on a corridor is picked up
   // by accident, a key at the end of a branch is a detour the player chooses.
-  const deadEnds = reachable.filter((cell) => openNeighbors(maze, cell).length === 1)
-  const pool = deadEnds.length >= gates.length ? deadEnds : reachable
-  rng.shuffle(pool)
+  const deadEnds = pool.filter((cell) => openNeighbors(maze, cell).length === 1)
+  const hiding = deadEnds.length >= gates.length ? deadEnds : pool
+  rng.shuffle(hiding)
 
   for (const gate of gates) {
     features.gateIndex[gate] = features.gateCells.length
     features.gateCells.push(gate)
   }
   for (let i = 0; i < gates.length; i++) {
-    const cell = pool[i]
+    const cell = hiding[i]
     taken[cell] = 1
     features.keyIndex[cell] = features.keyCells.length
     features.keyCells.push(cell)
@@ -519,6 +517,9 @@ function placeOneWays(maze: Maze, features: MazeFeatures, main: number[], count:
     if (placed >= count) break
     const from = main[step]
     const to = main[step + 1]
+    // A step through a portal is not a passage, and a door on a portal cell
+    // would be two mechanics on one cell.
+    if (features.portals[from] >= 0 || features.portals[to] >= 0) continue
     const dir = DIRECTION_LIST.find((d) => neighbor(maze, from, d) === to)
     if (!dir) continue
     const back = DIRECTIONS[DIRECTIONS[dir].opposite].wall
@@ -530,52 +531,5 @@ function placeOneWays(maze: Maze, features: MazeFeatures, main: number[], count:
       // so this only ever fires if that reasoning stops holding.
       features.oneWay[to] &= ~back
     }
-  }
-}
-
-/** Portal pairs: two-way links between cells far enough apart to be worth taking. */
-function placePortals(
-  maze: Maze,
-  features: MazeFeatures,
-  taken: Uint8Array,
-  pairs: number,
-  rng: Rng
-): void {
-  if (pairs <= 0) return
-  const plain = findPath(maze, maze.start, maze.end)?.length ?? 0
-  const minJump = Math.max(4, Math.floor((maze.width + maze.height) / 3))
-
-  const free: number[] = []
-  for (let cell = 0; cell < taken.length; cell++) {
-    // A portal under a one-way door would be two mechanics on one cell.
-    if (!taken[cell] && features.oneWay[cell] === 0) free.push(cell)
-  }
-  rng.shuffle(free)
-
-  for (let placed = 0; placed < pairs; ) {
-    const a = free.pop()
-    if (a === undefined) return
-    const { dist } = bfs(maze, a)
-    const partner = free.find((cell) => dist[cell] >= minJump)
-    if (partner === undefined) continue
-    free.splice(free.indexOf(partner), 1)
-
-    features.portals[a] = partner
-    features.portals[partner] = a
-    // Two ways a pair can spoil the maze: by turning it into a sprint, or by
-    // jumping the player past a gate, which would make its key pointless.
-    const tooShort = plain > 0 && optimalFeatureMoves(maze, features) < plain * MIN_ROUTE_FRACTION
-    const skipsGates =
-      features.gateCells.length > 0 &&
-      planRoute(maze, withoutKeys(features), EMPTY_RUN_STATE, maze.start, maze.end) !== null
-    if (tooShort || skipsGates) {
-      features.portals[a] = -1
-      features.portals[partner] = -1
-      continue
-    }
-    taken[a] = 1
-    taken[partner] = 1
-    features.portalPairs.push([a, partner])
-    placed++
   }
 }

@@ -17,7 +17,7 @@ const ROW = 84
  * The reel that opens a mystery box, over the maze, for exactly as long as the
  * session says the run is frozen.
  *
- * The outcome is already decided — by the seed, when the maze was made — so
+ * The outcome is already decided — dealt when the run began — so
  * this is a picture of a result rather than a draw. That also means it can be
  * animated by CSS alone: the reel's final position is known up front, so it
  * eases from a long way above to exactly the winning row and rests there, which

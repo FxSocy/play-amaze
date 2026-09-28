@@ -50,7 +50,7 @@ export interface Palette {
   start: string
   exit: string
   hint: string
-  /** Wall-break charges lying on an Arcade maze. */
+  /** Mystery boxes on a Portal maze, and the colour of a Portal game's third maze. */
   charge: string
   route: string
   trail: string

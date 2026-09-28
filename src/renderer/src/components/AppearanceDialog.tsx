@@ -78,6 +78,8 @@ function MazePreview({ session, appearance, palette, width, height }: { session:
             view,
             playerX: cell % session.maze.width,
             playerY: Math.floor(cell / session.maze.width),
+            pane: 0,
+            arrival: 0,
             route: [],
             showTrail: true,
             style: appearance.mazeStyle,

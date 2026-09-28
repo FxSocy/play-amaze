@@ -160,3 +160,26 @@ describe('Daily Doozie', () => {
     )
   })
 })
+
+describe('Daily Portal', () => {
+  const date = new Date('2026-09-28T12:00:00Z')
+
+  it('has its own seed for the same day', () => {
+    const seed = dailySeed(date, 'portal')
+    expect(seed).toBe('PORTAL-2026-09-28')
+    expect(isDailySeed(seed)).toBe(true)
+    expect(dailyKind(seed)).toBe('portal')
+    expect(dailyLabel(seed)).toBe('Daily Portal')
+    expect(companionDailySeed(seed)).toBe('DAILY-2026-09-28')
+    expect(describeModifiers(dailySettings(custom, seed), seed)).toMatch(/^Daily Portal 2026-09-28 · .* · 2 mazes of 34×22$/)
+  })
+
+  it('still names and validates results saved under the retired Daily Arcade', () => {
+    const seed = 'ARCADE-2026-09-20'
+    expect(isDailySeed(seed)).toBe(true)
+    expect(dailyLabel(seed)).toBe('Daily Arcade')
+    const settings = dailySettings(DEFAULT_SETTINGS, seed)
+    expect(settings.portal).toBe(0)
+    expect(resolveSize(settings)).toEqual({ width: 28, height: 18 })
+  })
+})

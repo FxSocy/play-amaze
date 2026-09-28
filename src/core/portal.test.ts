@@ -1,45 +1,59 @@
 import { describe, expect, it } from 'vitest'
 import {
   canLeave,
+  emptyFeatures,
   EMPTY_RUN_STATE,
-  generateFeatures,
   isEscapable,
-  optimalFeatureMoves,
   planRoute,
-  arcadeSpecFor,
   portalExit,
+  reachable,
   withoutKeys,
   MYSTERY_IS_GOOD,
   MYSTERY_OUTCOMES,
   type MazeFeatures,
   type MysteryOutcome
 } from './arcade'
-import { arcadeSpec, dailySettings } from './daily'
-import { canMove, DIRECTIONS, DIRECTION_LIST, neighbor, openNeighbors, type Maze } from './maze'
+import { dailySettings } from './daily'
+import { canMove, DIRECTIONS, DIRECTION_LIST, neighbor, openNeighbors, WALL_E, type Maze } from './maze'
+import { generatePortalWorld, PORTAL_COUNTS, PORTAL_LAYOUTS, type PortalCount } from './portal'
 import { BLIND_MS, BLIND_RADIUS, GameSession, MYSTERY_SPIN_MS } from './session'
-import { describeModifiers, modifierKey, DEFAULT_SETTINGS, FOG_LEVELS } from './settings'
-import { findPath } from './solver'
+import { describeModifiers, modifierKey, sanitizeSettings, DEFAULT_SETTINGS, FOG_LEVELS } from './settings'
 
-const SPEC = arcadeSpec('ARCADE-2026-09-20')!
+const DAILY = PORTAL_LAYOUTS[2]
 
-/** A week of Arcade seeds, so the invariants are checked against real layouts. */
+/** A week of Daily Portal seeds, so the invariants are checked against real layouts. */
 const SEEDS = [
-  'ARCADE-2026-09-20',
-  'ARCADE-2026-09-21',
-  'ARCADE-2026-09-22',
-  'ARCADE-2026-09-23',
-  'ARCADE-2026-09-24',
-  'ARCADE-2026-09-25',
-  'ARCADE-2026-09-26'
+  'PORTAL-2026-09-28',
+  'PORTAL-2026-09-29',
+  'PORTAL-2026-09-30',
+  'PORTAL-2026-10-01',
+  'PORTAL-2026-10-02',
+  'PORTAL-2026-10-03',
+  'PORTAL-2026-10-04'
 ]
 
-function arcadeSession(seed: string): GameSession {
+function portalSession(seed: string): GameSession {
   return new GameSession(dailySettings(DEFAULT_SETTINGS, seed), seed)
 }
 
-/** An Arcade maze and the features on it, which every Arcade seed has. */
-function arcadeMaze(seed: string): { maze: Maze; features: MazeFeatures } {
-  const session = arcadeSession(seed)
+/** A custom Portal game of `count` mazes. */
+function customSession(count: PortalCount, seed = 'K3F9Q2A'): GameSession {
+  return new GameSession({ ...DEFAULT_SETTINGS, seedMode: 'random', portal: count }, seed)
+}
+
+/** Every Portal game the tests look at: the daily week, and a few custom games of each size. */
+function everyWorld(): { name: string; session: GameSession }[] {
+  return [
+    ...SEEDS.map((seed) => ({ name: seed, session: portalSession(seed) })),
+    ...PORTAL_COUNTS.flatMap((count) =>
+      ['K3F9Q2A', '0ZX81PQ', 'M4AZE77'].map((seed) => ({ name: `${count} mazes ${seed}`, session: customSession(count, seed) }))
+    )
+  ]
+}
+
+/** A Portal maze and the features on it. */
+function portalMaze(seed: string): { maze: Maze; features: MazeFeatures } {
+  const session = portalSession(seed)
   return { maze: session.maze, features: session.features! }
 }
 
@@ -62,28 +76,65 @@ function walk(session: GameSession, route: number[]): void {
   }
 }
 
+/** The mazes a route passes through, in order, one entry per visit. */
+function mazesVisited(session: GameSession, route: number[]): number[] {
+  const visits: number[] = []
+  for (const cell of route) {
+    const pane = session.paneOf(cell) + 1
+    if (visits[visits.length - 1] !== pane) visits.push(pane)
+  }
+  return visits
+}
+
+/** How many walled-off pieces maze `pane` is in. */
+function sectionsIn(session: GameSession, pane: number): number {
+  const { maze } = session
+  const layout = session.layout!
+  const seen = new Uint8Array(maze.walls.length)
+  let pieces = 0
+  for (let y = 0; y < layout.paneHeight; y++) {
+    for (let x = 0; x < layout.paneWidth; x++) {
+      const cell = y * maze.width + pane * layout.paneWidth + x
+      if (seen[cell]) continue
+      pieces++
+      const queue = [cell]
+      seen[cell] = 1
+      for (let i = 0; i < queue.length; i++) {
+        for (const next of openNeighbors(maze, queue[i])) {
+          if (seen[next]) continue
+          seen[next] = 1
+          queue.push(next)
+        }
+      }
+    }
+  }
+  return pieces
+}
+
 /**
  * The first seed with a portal the player can walk up to on foot, with the route
  * that gets them there.
  */
 function findPortalApproach(): { session: GameSession; entrance: number; exit: number; route: number[] } | null {
   for (const seed of SEEDS) {
-    const session = arcadeSession(seed)
+    const session = portalSession(seed)
     session.begin(0)
-    for (const [entrance, exit] of session.features!.portalPairs) {
-      for (const dir of DIRECTION_LIST) {
-        // An open passage, not just a grid neighbour: the player has to be able
-        // to step across it.
-        if (!canLeave(session.maze, session.features!, entrance, dir)) continue
-        const approach = neighbor(session.maze, entrance, dir)
-        if (approach < 0) continue
-        const route = planRoute(session.maze, session.features!, session.runState, session.player, approach, {
-          portals: false
-        })
-        // The last step has to be onto the portal, so the approach must be
-        // somewhere the player can stand and then step across.
-        if (route && DIRECTION_LIST.some((d) => canLeave(session.maze, session.features!, approach, d) && neighbor(session.maze, approach, d) === entrance)) {
-          return { session, entrance, exit, route }
+    for (const [a, b] of session.features!.portalPairs) {
+      for (const [entrance, exit] of [
+        [a, b],
+        [b, a]
+      ]) {
+        for (const dir of DIRECTION_LIST) {
+          // An open passage, not just a grid neighbour: the player has to be able
+          // to step across it.
+          if (!canLeave(session.maze, session.features!, entrance, dir)) continue
+          const approach = neighbor(session.maze, entrance, dir)
+          const route = planRoute(session.maze, session.features!, session.runState, session.player, approach, {
+            portals: false
+          })
+          if (route && canLeave(session.maze, session.features!, approach, DIRECTIONS[dir].opposite)) {
+            return { session, entrance, exit, route }
+          }
         }
       }
     }
@@ -91,37 +142,104 @@ function findPortalApproach(): { session: GameSession; entrance: number; exit: n
   return null
 }
 
-describe('arcade features', () => {
-  it('places the same features for the same seed', () => {
-    const session = arcadeSession(SEEDS[0])
-    const again = generateFeatures(session.maze, `${SEEDS[0]}:arcade`, SPEC)
-    expect([...again.portals]).toEqual([...session.features!.portals])
-    expect(again.keyCells).toEqual(session.features!.keyCells)
-    expect(again.gateCells).toEqual(session.features!.gateCells)
-    expect([...again.oneWay]).toEqual([...session.features!.oneWay])
+describe('portal worlds', () => {
+  it('builds the same world for the same seed', () => {
+    const session = portalSession(SEEDS[0])
+    const again = generatePortalWorld(SEEDS[0], session.settings.algorithm, DAILY)
+    expect([...again.maze.walls]).toEqual([...session.maze.walls])
+    expect([...again.features.portals]).toEqual([...session.features!.portals])
+    expect(again.features.keyCells).toEqual(session.features!.keyCells)
+    expect(again.features.gateCells).toEqual(session.features!.gateCells)
+    expect(again.features.boxCells).toEqual(session.features!.boxCells)
+    expect([...again.features.oneWay]).toEqual([...session.features!.oneWay])
   })
 
-  it('gives every Arcade maze its full complement of features', () => {
+  it('makes the Daily Portal two mazes, starting in the first and ending in the second', () => {
     for (const seed of SEEDS) {
-      const features = arcadeSession(seed).features!
-      expect(features.portalPairs).toHaveLength(SPEC.portalPairs)
-      expect(features.gateCells).toHaveLength(SPEC.gates)
-      expect(features.keyCells).toHaveLength(SPEC.gates)
-      expect(features.boxCells).toHaveLength(SPEC.boxes)
-      expect(features.oneWay.some((bits) => bits !== 0)).toBe(true)
+      const session = portalSession(seed)
+      expect(session.layout).toEqual(DAILY)
+      expect(session.maze.width).toBe(DAILY.paneWidth * 2)
+      expect(session.paneOf(session.maze.start), seed).toBe(0)
+      expect(session.paneOf(session.maze.end), seed).toBe(1)
+    }
+  })
+
+  it('never lets a passage run between two mazes', () => {
+    for (const { name, session } of everyWorld()) {
+      const layout = session.layout!
+      for (let pane = 1; pane < layout.panes; pane++) {
+        for (let y = 0; y < layout.paneHeight; y++) {
+          const edge = y * session.maze.width + pane * layout.paneWidth - 1
+          expect(session.maze.walls[edge] & WALL_E, `${name}: open between mazes`).not.toBe(0)
+        }
+      }
+    }
+  })
+
+  it('cuts every maze into its sections', () => {
+    for (const { name, session } of everyWorld()) {
+      for (let pane = 0; pane < session.layout!.panes; pane++) {
+        expect(sectionsIn(session, pane), `${name}, maze ${pane + 1}`).toBe(session.layout!.sections)
+      }
+    }
+  })
+
+  it('links only different mazes, and every portal both ways', () => {
+    for (const { name, session } of everyWorld()) {
+      const { portals, portalPairs } = session.features!
+      for (const [a, b] of portalPairs) {
+        expect(portals[a]).toBe(b)
+        expect(portals[b]).toBe(a)
+        expect(session.paneOf(a), `${name}: a portal within one maze`).not.toBe(session.paneOf(b))
+      }
+    }
+  })
+
+  it('makes portals the only way to the exit', () => {
+    for (const { name, session } of everyWorld()) {
+      const { maze } = session
+      const walking = reachable(maze, emptyFeatures(maze), maze.start)
+      expect(walking[maze.end], `${name}: the exit can be walked to`).toBe(0)
+    }
+  })
+
+  it('bounces between the mazes on the way through, visiting every one', () => {
+    for (const { name, session } of everyWorld()) {
+      const route = planRoute(session.maze, session.features!, EMPTY_RUN_STATE, session.maze.start, session.maze.end)!
+      const visits = mazesVisited(session, route)
+      expect(new Set(visits).size, name).toBe(session.layout!.panes)
+      // At least there and back and there again: never a straight hop to the exit.
+      expect(visits.length, `${name}: ${visits.join(' > ')}`).toBeGreaterThanOrEqual(4)
+    }
+  })
+
+  it('leaves no cell out of reach', () => {
+    for (const { name, session } of everyWorld()) {
+      const all = reachable(session.maze, session.features!, session.maze.start)
+      expect(all.every((bit) => bit === 1), name).toBe(true)
+    }
+  })
+
+  it('gives every Portal game its full complement of features', () => {
+    for (const { name, session } of everyWorld()) {
+      const features = session.features!
+      const layout = session.layout!
+      expect(features.gateCells, name).toHaveLength(layout.gates)
+      expect(features.keyCells, name).toHaveLength(layout.gates)
+      expect(features.boxCells, name).toHaveLength(layout.boxes)
+      expect(features.oneWay.some((bits) => bits !== 0), name).toBe(true)
     }
   })
 
   it('never strands the player, wherever they wander', () => {
-    for (const seed of SEEDS) {
-      const session = arcadeSession(seed)
-      expect(isEscapable(session.maze, session.features!)).toBe(true)
+    for (const { name, session } of everyWorld()) {
+      expect(isEscapable(session.maze, session.features!), name).toBe(true)
     }
   })
 
   it('keeps every key on the near side of every gate', () => {
     for (const seed of SEEDS) {
-      const { maze, features } = arcadeMaze(seed)
+      const { maze, features } = portalMaze(seed)
       // With no keys in the maze at all, no gate can open — and every key must
       // still be reachable, or the player could be locked out of one.
       const sealed = withoutKeys(features)
@@ -132,41 +250,36 @@ describe('arcade features', () => {
     }
   })
 
-  it('puts gates on the one route to the exit, with no way around them', () => {
-    for (const seed of SEEDS) {
-      const { maze, features } = arcadeMaze(seed)
-      const main = findPath(maze, maze.start, maze.end)!
-      for (const gate of features.gateCells) expect(main).toContain(gate)
-      // Not even a portal may jump the player past a gate: that would make its
-      // key pointless and the run a lottery on which shortcut you found.
-      expect(planRoute(maze, withoutKeys(features), EMPTY_RUN_STATE, maze.start, maze.end)).toBeNull()
+  it('puts gates where there is no way around them, not even through a portal', () => {
+    for (const { name, session } of everyWorld()) {
+      const { maze, features } = session
+      expect(planRoute(maze, withoutKeys(features!), EMPTY_RUN_STATE, maze.start, maze.end), name).toBeNull()
     }
   })
 
-  it('does not let portals turn the maze into a sprint', () => {
-    for (const seed of SEEDS) {
-      const { maze, features } = arcadeMaze(seed)
-      const plain = findPath(maze, maze.start, maze.end)!.length
-      expect(optimalFeatureMoves(maze, features)).toBeGreaterThanOrEqual(plain * 0.5)
+  it('keeps portals out of the start and the exit', () => {
+    for (const { name, session } of everyWorld()) {
+      const { maze, features } = session
+      expect(features!.portals[maze.start], name).toBe(-1)
+      expect(features!.portals[maze.end], name).toBe(-1)
     }
   })
 })
 
-describe('arcade routing', () => {
-  it('plans a route the player can actually walk, for every seed', () => {
-    for (const seed of SEEDS) {
-      const session = arcadeSession(seed)
+describe('portal routing', () => {
+  it('plans a route the player can actually walk, for every game', () => {
+    for (const { name, session } of everyWorld()) {
       session.begin(0)
       const route = planRoute(session.maze, session.features!, session.runState, session.player, session.maze.end)
-      expect(route, `no route for ${seed}`).not.toBeNull()
+      expect(route, `no route for ${name}`).not.toBeNull()
       walk(session, route!)
-      expect(session.solved, `did not finish ${seed}`).toBe(true)
+      expect(session.solved, `did not finish ${name}`).toBe(true)
       expect(session.moves).toBe(route!.length - 1)
     }
   })
 
   it('sends the player for a key before a locked gate', () => {
-    const session = arcadeSession(SEEDS[0])
+    const session = portalSession(SEEDS[0])
     session.begin(0)
     const route = planRoute(session.maze, session.features!, session.runState, session.player, session.maze.end)!
     const firstKey = route.findIndex((cell) => session.keyAt(cell))
@@ -177,7 +290,7 @@ describe('arcade routing', () => {
 
   it('will not take a one-way door backwards', () => {
     for (const seed of SEEDS) {
-      const session = arcadeSession(seed)
+      const session = portalSession(seed)
       const features = session.features!
       const cell = [...features.oneWay].findIndex((bits) => bits !== 0)
       expect(cell, `no one-way door in ${seed}`).toBeGreaterThanOrEqual(0)
@@ -186,74 +299,50 @@ describe('arcade routing', () => {
       expect(canMove(session.maze, cell, back)).toBe(true)
       expect(canLeave(session.maze, features, cell, back)).toBe(false)
       session.begin(0)
-      // Getting back there may still be possible the long way round, or through
-      // a portal — but never by stepping straight back through the door.
       const backRoute = planRoute(session.maze, features, session.runState, cell, neighbor(session.maze, cell, back))
       expect(backRoute === null || backRoute.length > 2, `stepped back through the door in ${seed}`).toBe(true)
     }
   })
 })
 
-describe('custom arcade mazes', () => {
-  const custom = (arcade: 'off' | 'light' | 'full', sizePreset: 'small' | 'medium' | 'large' | 'huge') =>
-    new GameSession({ ...DEFAULT_SETTINGS, seedMode: 'random' as const, sizePreset, arcade }, 'K3F9Q2A')
-
+describe('custom portal games', () => {
   it('leaves a custom maze plain unless asked', () => {
-    expect(custom('off', 'medium').features).toBeNull()
-  })
-
-  it('scatters features on a custom maze at either level', () => {
-    for (const level of ['light', 'full'] as const) {
-      const session = custom(level, 'medium')
-      const features = session.features!
-      expect(features.portalPairs.length, level).toBeGreaterThan(0)
-      expect(features.gateCells.length, level).toBeGreaterThan(0)
-      expect(features.keyCells).toHaveLength(features.gateCells.length)
-      expect(features.boxCells.length, level).toBeGreaterThan(0)
-      expect(isEscapable(session.maze, features), level).toBe(true)
-    }
-  })
-
-  it('holds every invariant at every preset size', () => {
-    for (const sizePreset of ['small', 'medium', 'large', 'huge'] as const) {
-      const session = custom('full', sizePreset)
-      const features = session.features!
-      expect(isEscapable(session.maze, features), sizePreset).toBe(true)
-      expect(
-        planRoute(session.maze, withoutKeys(features), EMPTY_RUN_STATE, session.maze.start, session.maze.end),
-        `gates bypassable on ${sizePreset}`
-      ).toBeNull()
-      // And the route it would show is one that can actually be walked.
-      const route = planRoute(session.maze, features, session.runState, session.player, session.maze.end)!
-      walk(session, route)
-      expect(session.solved, sizePreset).toBe(true)
-    }
-  })
-
-  it('scales the feature count with the maze, not with nothing', () => {
-    const small = arcadeSpecFor('full', 15, 10)!
-    const huge = arcadeSpecFor('full', 90, 56)!
-    expect(huge.portalPairs).toBeGreaterThan(small.portalPairs)
-    expect(huge.oneWays).toBeGreaterThan(small.oneWays)
-    expect(huge.boxes).toBeGreaterThan(small.boxes)
-    // Gates cost the route planner a dimension each, so they stay put.
-    expect(huge.gates).toBe(small.gates)
-    expect(arcadeSpecFor('off', 30, 20)).toBeNull()
-  })
-
-  it('keeps a custom arcade run out of the plain maze leaderboard', () => {
-    const plain = { ...DEFAULT_SETTINGS, seedMode: 'random' as const }
-    expect(modifierKey({ ...plain, arcade: 'full' }, 'K3F9Q2A')).not.toBe(modifierKey(plain, 'K3F9Q2A'))
-    expect(modifierKey({ ...plain, arcade: 'full' }, 'K3F9Q2A')).not.toBe(
-      modifierKey({ ...plain, arcade: 'light' }, 'K3F9Q2A')
-    )
-    expect(describeModifiers({ ...plain, arcade: 'full' }, 'K3F9Q2A')).toContain('Full arcade')
-  })
-
-  it('ignores the custom dial on a daily maze', () => {
-    const seed = 'DAILY-2026-09-20'
-    const session = new GameSession(dailySettings({ ...DEFAULT_SETTINGS, arcade: 'full' }, seed), seed)
+    const session = new GameSession({ ...DEFAULT_SETTINGS, seedMode: 'random' }, 'K3F9Q2A')
     expect(session.features).toBeNull()
+    expect(session.layout).toBeNull()
+    expect(session.isPortal).toBe(false)
+  })
+
+  it('links as many mazes as asked for, each smaller as the count goes up', () => {
+    let area = Infinity
+    for (const count of PORTAL_COUNTS) {
+      const session = customSession(count)
+      expect(session.layout!.panes).toBe(count)
+      expect(session.paneOf(session.maze.end)).toBe(count - 1)
+      const each = session.layout!.paneWidth * session.layout!.paneHeight
+      expect(each).toBeLessThan(area)
+      area = each
+    }
+  })
+
+  it('keeps each count on its own leaderboard', () => {
+    const plain = { ...DEFAULT_SETTINGS, seedMode: 'random' as const }
+    const keys = new Set([0, 2, 3, 4].map((portal) => modifierKey({ ...plain, portal: portal as 0 }, 'K3F9Q2A')))
+    expect(keys.size).toBe(4)
+    expect(describeModifiers({ ...plain, portal: 3 }, 'K3F9Q2A')).toContain('3 mazes of 28×18')
+  })
+
+  it('ignores the custom setting on the dailies', () => {
+    const plainDaily = 'DAILY-2026-09-28'
+    expect(new GameSession(dailySettings({ ...DEFAULT_SETTINGS, portal: 4 }, plainDaily), plainDaily).features).toBeNull()
+    const seed = SEEDS[0]
+    expect(new GameSession(dailySettings({ ...DEFAULT_SETTINGS, portal: 4 }, seed), seed).layout!.panes).toBe(2)
+  })
+
+  it('drops the retired Arcade dial from saved settings', () => {
+    const saved = sanitizeSettings({ ...DEFAULT_SETTINGS, arcade: 'full', portal: undefined })
+    expect(saved.portal).toBe(0)
+    expect('arcade' in saved).toBe(false)
   })
 })
 
@@ -261,7 +350,7 @@ describe('mystery boxes', () => {
   /** The first seed whose boxes include `outcome`, walked up to and opened. */
   function openBox(outcome: MysteryOutcome): { session: GameSession; cell: number } {
     for (const seed of SEEDS) {
-      const session = arcadeSession(seed)
+      const session = portalSession(seed)
       const index = session.boxOutcomes.indexOf(outcome)
       if (index < 0) continue
       session.begin(0)
@@ -274,7 +363,7 @@ describe('mystery boxes', () => {
 
   it('only ever puts a box at a dead end', () => {
     for (const seed of SEEDS) {
-      const { maze, features } = arcadeMaze(seed)
+      const { maze, features } = portalMaze(seed)
       expect(features.boxCells.length, seed).toBeGreaterThan(0)
       for (const cell of features.boxCells) {
         expect(openNeighbors(maze, cell), `box ${cell} in ${seed} is not a dead end`).toHaveLength(1)
@@ -286,7 +375,7 @@ describe('mystery boxes', () => {
 
   it('deals outcomes from a bag, so no maze is all punishment', () => {
     for (const seed of SEEDS) {
-      const outcomes = arcadeSession(seed).boxOutcomes
+      const outcomes = portalSession(seed).boxOutcomes
       // Dealt from shuffled bags of all four outcomes, so the counts can never
       // be further apart than one whole bag's worth: with five boxes, one
       // outcome comes up twice and the other three once each.
@@ -301,7 +390,7 @@ describe('mystery boxes', () => {
 
   it('deals fresh outcomes each run of the same seed, in the same places', () => {
     const seed = SEEDS[0]
-    const runs = Array.from({ length: 20 }, () => arcadeSession(seed))
+    const runs = Array.from({ length: 20 }, () => portalSession(seed))
     for (const run of runs) expect(run.features!.boxCells).toEqual(runs[0].features!.boxCells)
     const deals = new Set(runs.map((run) => run.boxOutcomes.join()))
     expect(deals.size, 'twenty runs all dealt the same boxes').toBeGreaterThan(1)
@@ -311,7 +400,7 @@ describe('mystery boxes', () => {
     // Boxes sit at dead ends and a shortest route has no reason to enter one,
     // so a hint or a give-up route never walks into a gamble.
     for (const seed of SEEDS) {
-      const session = arcadeSession(seed)
+      const session = portalSession(seed)
       session.begin(0)
       const route = planRoute(session.maze, session.features!, session.runState, session.player, session.maze.end)!
       for (const cell of route) expect(session.boxAt(cell), `route crosses a box in ${seed}`).toBe(false)
@@ -410,8 +499,8 @@ describe('mystery boxes', () => {
   })
 })
 
-describe('arcade gameplay', () => {
-  it('teleports through a portal as a single move, without bouncing back', () => {
+describe('portal gameplay', () => {
+  it('takes the player to another maze through a portal, as a single move', () => {
     // A portal sitting in a corridor cannot be walked *through* — stepping on it
     // always teleports — so the approach is planned to a neighbour of it.
     const approach = findPortalApproach()
@@ -423,6 +512,7 @@ describe('arcade gameplay', () => {
     const onto = DIRECTION_LIST.find((d) => neighbor(session.maze, session.player, d) === entrance)!
     expect(session.move(onto, 0)).toBe(true)
     expect(session.player).toBe(exit)
+    expect(session.paneOf(exit)).not.toBe(session.paneOf(entrance))
     expect(session.moves).toBe(before + 1)
 
     // Standing on the far portal does not send the player straight back.
@@ -431,8 +521,26 @@ describe('arcade gameplay', () => {
     expect(session.player).not.toBe(entrance)
   })
 
+  it('will not break or jump the outer wall of a maze into the next one', () => {
+    const session = portalSession(SEEDS[0])
+    session.begin(0)
+    const layout = session.layout!
+    // The last column of maze 1, whose east wall is maze 2's west wall.
+    session.player = layout.paneWidth - 1
+    session.breaksLeft = 1
+    expect(session.armBreak(true)).toBe(true)
+    expect(session.move('right', 0)).toBe(false)
+    expect(canMove(session.maze, session.player, 'right')).toBe(false)
+    expect(session.breaksLeft, 'the charge is not spent').toBe(1)
+
+    session.jumpsLeft = 1
+    expect(session.armJump(true)).toBe(true)
+    expect(session.move('right', 0)).toBe(false)
+    expect(session.paneOf(session.player)).toBe(0)
+  })
+
   it('spends a key on a gate and keeps it open afterwards', () => {
-    const session = arcadeSession(SEEDS[0])
+    const session = portalSession(SEEDS[0])
     session.begin(0)
     const gate = session.features!.gateCells[0]
     expect(session.gateAt(gate)).toBe('locked')
@@ -441,15 +549,14 @@ describe('arcade gameplay', () => {
     walk(session, route)
     expect(session.player).toBe(gate)
     expect(session.gateAt(gate)).toBe('open')
-    expect(session.keysHeld).toBe(0)
   })
 
   it('will not open a gate without a key', () => {
-    const session = arcadeSession(SEEDS[0])
+    const session = portalSession(SEEDS[0])
     session.begin(0)
     const gate = session.features!.gateCells[0]
     const approach = planRoute(session.maze, session.features!, session.runState, session.player, gate)!
-    // Walk to the cell before the gate, then drop the key that was picked up.
+    // Walk to the cell before the gate, then drop the keys picked up on the way.
     walk(session, approach.slice(0, -1))
     session.keysHeld = 0
     const dir = DIRECTION_LIST.find((d) => neighbor(session.maze, session.player, d) === gate)!
@@ -458,38 +565,20 @@ describe('arcade gameplay', () => {
   })
 
   it('starts with no wall-break charges, and will not arm one', () => {
-    const session = arcadeSession(SEEDS[0])
+    const session = portalSession(SEEDS[0])
     session.begin(0)
     expect(session.breaksLeft).toBe(0)
-    expect(session.boxesLeft).toBe(SPEC.boxes)
+    expect(session.boxesLeft).toBe(DAILY.boxes)
     expect(session.armBreak(true)).toBe(false)
     expect(session.breakArmed).toBe(false)
-
-    // With nothing armed, a wall is still a wall.
-    const walled = DIRECTION_LIST.find((d) => {
-      const step = neighbor(session.maze, session.player, d)
-      return step >= 0 && !session.move(d, 0)
-    })
-    expect(walled).toBeDefined()
-    expect(session.move(walled!, 0)).toBe(false)
-  })
-
-  it('never needs a charge to finish the maze', () => {
-    // The route planner knows nothing about charges, so a route it finds is one
-    // walked without breaking anything.
-    for (const seed of SEEDS) {
-      const session = arcadeSession(seed)
-      session.begin(0)
-      walk(session, planRoute(session.maze, session.features!, session.runState, session.player, session.maze.end)!)
-      expect(session.solved, seed).toBe(true)
-    }
   })
 
   it('leaves a plain daily maze with no features at all', () => {
-    const seed = 'DAILY-2026-09-20'
+    const seed = 'DAILY-2026-09-28'
     const session = new GameSession(dailySettings(DEFAULT_SETTINGS, seed), seed)
     expect(session.features).toBeNull()
-    expect(session.isArcade).toBe(false)
+    expect(session.isPortal).toBe(false)
+    expect(session.paneOf(session.maze.end)).toBe(0)
     expect(session.breaksLeft).toBe(0)
     expect(session.boxesLeft).toBe(0)
   })
